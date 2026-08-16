@@ -2,6 +2,8 @@ package com.bluefoxconsultant.sms.ui.phone
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
@@ -103,6 +105,19 @@ fun CallDialog(
                         "compose le numéro en affichant la ligne d'affaires.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
+                // The carrier only lets a trunk present a number the account
+                // owns, so the ringing phone shows the business line — never the
+                // person being called. Unexpected, and worth saying before the
+                // phone rings rather than after it went unanswered.
+                if (ring == PhoneConfig.RING_CALLBACK && config.callbackShowsAs.isNotBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Votre téléphone affichera ${config.callbackShowsAs} — " +
+                            "c'est bien cet appel, répondez.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 if (config.canRingCallback && config.canRingExtension) {
                     RingChoice(
                         label = "Mon numéro de rappel (${config.callbackNumber})",
@@ -127,7 +142,12 @@ fun CallDialog(
                         try {
                             val response = Graph.phone.call(number, ring)
                             onDismiss()
-                            snackbar.showSnackbar("Le PBX fait sonner ${response.ringLabel}.")
+                            snackbar.showSnackbar(
+                                if (response.showsAs.isNotBlank())
+                                    "Le PBX fait sonner ${response.ringLabel} — " +
+                                        "affichage : ${response.showsAs}."
+                                else "Le PBX fait sonner ${response.ringLabel}.",
+                            )
                         } catch (e: ApiException) {
                             // The server sends a sentence, not a code: unknown
                             // number, no callback number set, rate limit. Show it.

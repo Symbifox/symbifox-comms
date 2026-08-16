@@ -19,6 +19,14 @@ data class PhoneConfig(
     @SerialName("callback_number") val callbackNumber: String = "",
     /** `callback` or `extension` — what to preselect. */
     @SerialName("default_ring") val defaultRing: String = RING_CALLBACK,
+    /**
+     * What the phone will display when the PBX rings it through the carrier.
+     *
+     * Never the correspondent: a trunk may only present a number the account
+     * owns, so the carrier substitutes anything else. Said up front, because an
+     * unexpected "Blue Fox" call is one you let ring.
+     */
+    @SerialName("callback_shows_as") val callbackShowsAs: String = "",
 ) {
     val canRingCallback: Boolean get() = callbackNumber.isNotBlank()
     val canRingExtension: Boolean get() = extension.isNotBlank()
@@ -43,6 +51,7 @@ data class CallResponse(
     @SerialName("ring_label") val ringLabel: String = "",
     val number: String = "",
     @SerialName("contact_name") val contactName: String = "",
+    @SerialName("shows_as") val showsAs: String = "",
 )
 
 @Serializable
