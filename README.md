@@ -17,6 +17,9 @@ notifications go through [UnifiedPush](https://unifiedpush.org).
 - **Call the person you are texting**, without the call coming from your own
   number: the server's PBX rings your phone, then dials them and shows the
   business line. No SIP stack on the handset, no microphone permission
+- **Dictate instead of typing**, in a text message or an email: the recording
+  goes to the instance's own transcription service and comes back as text.
+  Nothing is sent anywhere else, and the recording is deleted once transcribed
 - Configurable swipe gestures and quick-action buttons
 - Offline cache, so a train tunnel doesn't empty the screen
 - Brand colours picked up from the Odoo instance it connects to
@@ -34,10 +37,12 @@ This is a client. It talks to a REST API served by two Odoo modules, which are
 | `bf_email_management` | the unified mailbox, routing, snoozing, the mobile API |
 | `bf_sms_archive` | SMS threads and sending |
 | `bf_softphone` | calls placed by the instance's PBX (optional, LGPL-3) |
+| `bf_speech` | dictation, via the instance's transcription service (optional, LGPL-3) |
 
 Either mailbox module may be absent; the app simply hides the tab it can't
 reach. `bf_softphone` is optional on top of `bf_sms_archive`: without it, the
-call button never appears. The
+call button never appears. `bf_speech` is optional too, and answers to either
+token, so dictation works on a mail-only install; without it, no microphone. The
 instance URL is asked for on first launch and can be changed at any time, so the
 app is not tied to any particular server.
 

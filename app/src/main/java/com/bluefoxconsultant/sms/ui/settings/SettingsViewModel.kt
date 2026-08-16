@@ -38,6 +38,7 @@ class SettingsViewModel : ViewModel() {
             // Their phone rights are not this user's, and the call button must
             // not survive the sign-out that revoked the token behind it.
             Graph.phoneStore.invalidate()
+            Graph.speechStore.invalidate()
             store.clearAllTokens()
         }
     }

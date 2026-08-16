@@ -5,6 +5,7 @@ import com.bluefoxconsultant.sms.network.ApiClient
 import com.bluefoxconsultant.sms.network.MailRepository
 import com.bluefoxconsultant.sms.network.PhoneRepository
 import com.bluefoxconsultant.sms.network.Repository
+import com.bluefoxconsultant.sms.network.SpeechRepository
 
 /** Minimal service locator, initialised from BfSmsApp (and lazily from receivers). */
 object Graph {
@@ -12,6 +13,9 @@ object Graph {
 
     /** REST surface of `bf_softphone`, served by the same instance. */
     private const val PHONE_API_PATH = "/bf_softphone/mobile/v1"
+
+    /** REST surface of `bf_speech` (dictation). */
+    private const val SPEECH_API_PATH = "/bf_speech/mobile/v1"
 
     lateinit var tokenStore: TokenStore
         private set
@@ -38,6 +42,15 @@ object Graph {
     lateinit var phone: PhoneRepository
         private set
     lateinit var phoneStore: PhoneStore
+        private set
+
+    /**
+     * Dictation — `bf_speech`. Depends on neither mailbox module server-side,
+     * so it answers to whichever device token this install has.
+     */
+    lateinit var speech: SpeechRepository
+        private set
+    lateinit var speechStore: SpeechStore
         private set
 
     /** Last-known mailbox on disk, and actions taken while offline. */
@@ -70,6 +83,12 @@ object Graph {
         mail = MailRepository(mailApi)
         phone = PhoneRepository(phoneApi)
         phoneStore = PhoneStore(phone)
+        speech = SpeechRepository(
+            ApiClient(tokenStore, Service.SMS, apiPath = SPEECH_API_PATH),
+            ApiClient(tokenStore, Service.MAIL, apiPath = SPEECH_API_PATH),
+            tokenStore,
+        )
+        speechStore = SpeechStore(speech)
         mailCache = MailCache(context.applicationContext)
         outbox = MailOutbox(context.applicationContext)
         brandStore = BrandStore(context.applicationContext)

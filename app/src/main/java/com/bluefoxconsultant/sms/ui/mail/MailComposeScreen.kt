@@ -60,6 +60,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.bluefoxconsultant.sms.ui.speech.DictateButton
+import com.bluefoxconsultant.sms.ui.speech.appendSpoken
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
 
 @Suppress("UNCHECKED_CAST")
@@ -213,6 +215,15 @@ fun MailComposeScreen(
                     .fillMaxWidth()
                     .padding(16.dp),
                 minLines = 8,
+                trailingIcon = {
+                    DictateButton(snackbar = snackbar) { spoken ->
+                        // Caret to the end: dictation extends the message, so
+                        // that is where the next word goes.
+                        val updated = appendSpoken(bodyField.text, spoken)
+                        bodyField = TextFieldValue(updated, TextRange(updated.length))
+                        vm.body = updated
+                    }
+                },
             )
             if (!vm.isNew) {
                 Text(

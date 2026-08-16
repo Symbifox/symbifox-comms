@@ -57,6 +57,8 @@ import com.bluefoxconsultant.sms.data.Message
 import com.bluefoxconsultant.sms.ui.clockTime
 import com.bluefoxconsultant.sms.ui.lines.LinePickerSheet
 import com.bluefoxconsultant.sms.ui.phone.CallAction
+import com.bluefoxconsultant.sms.ui.speech.DictateButton
+import com.bluefoxconsultant.sms.ui.speech.appendSpoken
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -192,7 +194,7 @@ fun ConversationScreen(
                     )
                 }
             }
-            Composer(sending = vm.sending, onSend = { vm.send(it) })
+            Composer(sending = vm.sending, snackbar = snackbar, onSend = { vm.send(it) })
         }
     }
 
@@ -264,7 +266,11 @@ private fun MessageBubble(message: Message) {
 }
 
 @Composable
-private fun Composer(sending: Boolean, onSend: (String) -> Unit) {
+private fun Composer(
+    sending: Boolean,
+    snackbar: SnackbarHostState,
+    onSend: (String) -> Unit,
+) {
     var text by remember { mutableStateOf("") }
 
     Surface(
@@ -285,6 +291,11 @@ private fun Composer(sending: Boolean, onSend: (String) -> Unit) {
                 placeholder = { Text("Message texto") },
                 maxLines = 5,
                 modifier = Modifier.weight(1f),
+                trailingIcon = {
+                    DictateButton(snackbar = snackbar) { spoken ->
+                        text = appendSpoken(text, spoken)
+                    }
+                },
             )
             Spacer(Modifier.width(8.dp))
             val enabled = text.isNotBlank() && !sending

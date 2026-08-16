@@ -4,6 +4,11 @@
 
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Dictée : demandé au premier appui sur le micro, jamais au démarrage.
+         L'enregistrement vit dans le cache le temps d'être transcrit, puis est
+         effacé. Un appareil sans micro garde l'app entièrement utilisable. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <uses-feature android:name="android.hardware.microphone" android:required="false"/>
 
     <!-- Discover UnifiedPush distributors (ntfy, etc.) on Android 11+. -->
     <queries>

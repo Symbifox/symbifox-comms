@@ -51,6 +51,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bluefoxconsultant.sms.data.Contact
 import com.bluefoxconsultant.sms.ui.phone.CallAction
+import com.bluefoxconsultant.sms.ui.speech.DictateButton
+import com.bluefoxconsultant.sms.ui.speech.appendSpoken
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
 
 @Composable
@@ -137,6 +139,11 @@ fun ComposeScreen(
                 label = { Text("Message") },
                 minLines = 3,
                 modifier = Modifier.fillMaxWidth(),
+                trailingIcon = {
+                    DictateButton(snackbar = snackbar) { spoken ->
+                        vm.onMessageChange(appendSpoken(vm.message, spoken))
+                    }
+                },
             )
 
             Spacer(Modifier.height(20.dp))
