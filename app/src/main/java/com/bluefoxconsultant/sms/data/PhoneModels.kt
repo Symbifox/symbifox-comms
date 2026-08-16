@@ -95,6 +95,8 @@ data class ActiveCall(
     val seconds: Int = 0,
     /** Asterisk channel state: `Up`, `Ringing`, `Ring`… */
     val state: String = "",
+    /** `outbound` is the correspondent's leg — the one an IVR listens on. */
+    val role: String = "local",
 ) {
     val isUp: Boolean get() = state.equals("Up", ignoreCase = true)
     val clock: String get() = "%d:%02d".format(seconds / 60, seconds % 60)
@@ -107,4 +109,11 @@ data class ActiveCallsResponse(val calls: List<ActiveCall> = emptyList())
 data class HangupResponse(
     val ok: Boolean = false,
     @SerialName("hung_up") val hungUp: Int = 0,
+)
+
+@Serializable
+data class DtmfResponse(
+    val ok: Boolean = false,
+    val sent: Int = 0,
+    val digits: String = "",
 )

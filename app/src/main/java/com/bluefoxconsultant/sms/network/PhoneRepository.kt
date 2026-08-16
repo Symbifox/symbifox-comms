@@ -5,6 +5,7 @@ import com.bluefoxconsultant.sms.data.CallResponse
 import com.bluefoxconsultant.sms.data.ActiveCall
 import com.bluefoxconsultant.sms.data.ActiveCallsResponse
 import com.bluefoxconsultant.sms.data.CallLogEntry
+import com.bluefoxconsultant.sms.data.DtmfResponse
 import com.bluefoxconsultant.sms.data.HangupResponse
 import com.bluefoxconsultant.sms.data.CallLogResponse
 import com.bluefoxconsultant.sms.data.PhoneConfig
@@ -65,6 +66,18 @@ class PhoneRepository(private val api: ApiClient) {
     suspend fun hangup(channel: String? = null): HangupResponse = withContext(Dispatchers.IO) {
         val body = channel?.let { """{"channel":"$it"}""" } ?: "{}"
         json.decodeFromString(api.postJson("/hangup", body))
+    }
+
+    /**
+     * Sends keys to the correspondent — answering a phone menu.
+     *
+     * The PBX plays them into the outbound leg, because the handset carries no
+     * audio of its own. On a call answered on a real phone, that phone's own
+     * keypad works too; this is what makes menus answerable when the audio is
+     * on the desk softphone instead.
+     */
+    suspend fun dtmf(digits: String): DtmfResponse = withContext(Dispatchers.IO) {
+        json.decodeFromString(api.postJson("/dtmf", """{"digits":"$digits"}"""))
     }
 
     /** Asks the PBX to ring [ring] (or the user's default) and dial [number]. */

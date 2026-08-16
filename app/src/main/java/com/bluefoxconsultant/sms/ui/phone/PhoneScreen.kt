@@ -108,6 +108,7 @@ fun PhoneScreen(vm: PhoneViewModel = viewModel()) {
                 InCallBar(
                     call = call,
                     hangingUp = vm.hangingUp,
+                    dtmfSent = vm.dtmfSent,
                     onHangup = vm::hangup,
                 )
             }
@@ -132,10 +133,13 @@ fun PhoneScreen(vm: PhoneViewModel = viewModel()) {
                     .padding(horizontal = 24.dp, vertical = 6.dp),
             )
             HorizontalDivider()
+            // ⚠️ Pendant un appel, une touche répond au menu d'en face ; elle
+            // n'écrit pas un numéro. Même clavier, deux sens selon l'état.
+            val enCommunication = vm.active.any { it.isUp }
             Keypad(
-                onDigit = vm::press,
+                onDigit = { key -> if (enCommunication) vm.sendDtmf(key) else vm.press(key) },
                 onBackspace = vm::backspace,
-                onClear = vm::clear,
+                onClear = { if (enCommunication) vm.clearDtmf() else vm.clear() },
             )
             Row(
                 modifier = Modifier
@@ -145,7 +149,7 @@ fun PhoneScreen(vm: PhoneViewModel = viewModel()) {
             ) {
                 IconButton(
                     onClick = { if (vm.callable) calling = true },
-                    enabled = vm.callable && !vm.placing,
+                    enabled = vm.callable && !vm.placing && !enCommunication,
                     modifier = Modifier
                         .size(64.dp)
                         .background(
@@ -182,6 +186,7 @@ private val CALL_GREEN = Color(0xFF2E9E5B)
 private fun InCallBar(
     call: com.bluefoxconsultant.sms.data.ActiveCall,
     hangingUp: Boolean,
+    dtmfSent: String,
     onHangup: () -> Unit,
 ) {
     Surface(color = CALL_GREEN) {
@@ -204,6 +209,12 @@ private fun InCallBar(
                     ).joinToString(" · "),
                     color = Color.White,
                     fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                )
+                if (dtmfSent.isNotBlank()) Text(
+                    "Touches envoyées : $dtmfSent",
+                    color = Color.White.copy(alpha = .85f),
+                    fontSize = 11.sp,
                     maxLines = 1,
                 )
             }

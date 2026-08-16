@@ -89,6 +89,23 @@ class PhoneViewModel : ViewModel() {
         watchJob = null
     }
 
+    var dtmfSent by mutableStateOf("")
+        private set
+
+    /** A key pressed during a call answers the menu; it does not dial. */
+    fun sendDtmf(key: Char) {
+        viewModelScope.launch {
+            try {
+                Graph.phone.dtmf(key.toString())
+                dtmfSent = (dtmfSent + key).takeLast(16)
+            } catch (e: Exception) {
+                error = "Touche non transmise."
+            }
+        }
+    }
+
+    fun clearDtmf() { dtmfSent = "" }
+
     fun hangup() {
         if (hangingUp) return
         viewModelScope.launch {
