@@ -1,0 +1,5 @@
+* L'application devient Symbifox Comms, avec une nouvelle icône
+* Les couleurs de marque proviennent de l'instance Odoo connectée
+* La vue en fil de discussion peut être désactivée
+* Choix des actions qui ont un bouton hors du menu ⋯
+* Gestes de balayage configurables, et seuil moins sensible

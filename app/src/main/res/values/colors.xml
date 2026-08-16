@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Blue Fox brand — NO Odoo purple/plum anywhere. -->
+    <color name="bf_blue">#29ABE2</color>
+    <color name="bf_blue_dark">#1E86B4</color>
+    <color name="bf_anthracite">#2D3031</color>
+    <color name="white">#FFFFFF</color>
+    <color name="ic_launcher_background">#FFFFFF</color>
+</resources>

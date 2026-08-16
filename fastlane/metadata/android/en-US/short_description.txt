@@ -1,0 +1,1 @@
+Odoo email and SMS in one inbox

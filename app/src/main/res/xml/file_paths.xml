@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Only the one cache subdirectory attachments are written to. Not the whole
+  cache, and certainly not files-path: a FileProvider grants read access to
+  whatever it exposes, so it should expose as little as possible.
+-->
+<paths>
+    <cache-path name="mail_attachments" path="mail_attachments/"/>
+</paths>

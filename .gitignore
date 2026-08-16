@@ -1,0 +1,17 @@
+bf-sms.keystore
+signing.env
+.gradle/
+build/
+app/build/
+/local.properties
+
+*.apk
+*.keystore
+
+# Documents de travail internes : ils décrivent l'arborescence de déploiement
+# et les scripts internes, rien de tout ça n'a sa place dans un dépôt public.
+HANDOFF.md
+PLAN_ODOO_INBOX.md
+README_INSTALLATION.md
+.kotlin/
+API_CONTRACT.md

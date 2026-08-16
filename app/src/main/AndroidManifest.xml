@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
+    <!-- Discover UnifiedPush distributors (ntfy, etc.) on Android 11+. -->
+    <queries>
+        <intent>
+            <action android:name="org.unifiedpush.android.distributor.REGISTER"/>
+        </intent>
+    </queries>
+
+    <application
+        android:name=".BfSmsApp"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.BfSms"
+        android:usesCleartextTraffic="false"
+        tools:targetApi="34">
+
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.BfSms">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <!-- Web-login capture deep link: com.bluefoxconsultant.sms://auth?code=&state= -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data
+                    android:scheme="com.bluefoxconsultant.sms"
+                    android:host="auth"/>
+            </intent-filter>
+        </activity>
+
+        <!-- Hands a downloaded attachment to the app that can open it, without
+             ever writing to shared storage. Authority is package-scoped so a
+             branded flavour doesn't collide with this build. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.attachments"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths"/>
+        </provider>
+
+        <!-- UnifiedPush: receives endpoint + push messages from the distributor. -->
+        <receiver
+            android:name=".push.PushReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="org.unifiedpush.android.connector.MESSAGE"/>
+                <action android:name="org.unifiedpush.android.connector.NEW_ENDPOINT"/>
+                <action android:name="org.unifiedpush.android.connector.REGISTRATION_FAILED"/>
+                <action android:name="org.unifiedpush.android.connector.UNREGISTERED"/>
+            </intent-filter>
+        </receiver>
+
+        <!-- Notification quick-reply (RemoteInput → POST /send). -->
+        <receiver
+            android:name=".push.ReplyReceiver"
+            android:exported="false"/>
+
+        <!-- Swipe-away → POST /mark_read (read sync). -->
+        <receiver
+            android:name=".push.MarkReadReceiver"
+            android:exported="false"/>
+
+        <!-- Mail: notification quick-reply (RemoteInput → POST /reply). -->
+        <receiver
+            android:name=".push.MailReplyReceiver"
+            android:exported="false"/>
+
+        <!-- Mail: swipe-away → POST /mark_read. -->
+        <receiver
+            android:name=".push.MailMarkReadReceiver"
+            android:exported="false"/>
+
+    </application>
+
+</manifest>

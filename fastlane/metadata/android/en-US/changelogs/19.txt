@@ -1,0 +1,5 @@
+* App renamed to Symbifox Comms, with a new icon
+* Brand colours are now read from the connected Odoo instance
+* Thread view for email can be turned off
+* Choose which actions get a button outside the overflow menu
+* Configurable swipe gestures, and a less twitchy swipe threshold

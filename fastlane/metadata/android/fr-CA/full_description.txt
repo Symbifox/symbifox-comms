@@ -1,0 +1,22 @@
+Client mobile des modules Symbifox pour Odoo. Les courriels et les SMS de votre
+instance arrivent dans une boîte de réception unique, avec le tri, le classement
+et le routage faits côté serveur plutôt que sur le téléphone.
+
+Fonctions :
+
+* Boîte unifiée courriel et SMS, en deux onglets
+* Réponse, transfert, rédaction, avec pièces jointes
+* Archivage, report, et annulation pendant cinq secondes
+* Routage d'un message vers une fiche Odoo, création de tâche, billet, piste,
+  facture ou dépense à partir d'un courriel
+* Notifications par UnifiedPush : ni Google Play Services, ni Firebase
+* Gestes de balayage et boutons rapides configurables
+* Cache hors ligne
+* Couleurs reprises de la marque de l'instance Odoo connectée
+
+L'application demande l'adresse de votre instance au premier lancement. Elle ne
+voit jamais votre mot de passe : la connexion passe par la page web d'Odoo, qui
+rend un jeton à usage unique.
+
+C'est un client. Il requiert les modules Odoo bf_email_management et
+bf_sms_archive, qui sont propriétaires (Business Source License 1.1).
