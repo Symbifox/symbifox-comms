@@ -130,21 +130,26 @@ class GenfoxViewModel : ViewModel() {
     private fun poll(turnId: Int) {
         pollJob?.cancel()
         pollJob = viewModelScope.launch {
-            // Two seconds is short enough to feel live and long enough not to
-            // hammer an instance that is busy thinking. The ceiling matches the
-            // server's own turn timeout, so a lost turn ends as an error rather
-            // than a dot that never stops.
+            // Fast enough that the answer visibly writes itself, slow enough not
+            // to hammer an instance that is busy thinking. Each poll returns the
+            // text SO FAR, so progress is real rather than animated for show.
             repeat(MAX_POLLS) {
                 delay(POLL_MS)
-                val state = runCatching { Graph.genfox.turn(turnId) }.getOrNull() ?: return@repeat
-                if (state.state != "pending") {
-                    replacePending(GenfoxMessage(
-                        id = state.turnId,
-                        role = "assistant",
-                        content = state.text,
-                        state = state.state,
-                    ))
-                    sessionName = state.sessionName
+                val turn = runCatching { Graph.genfox.turn(turnId) }.getOrNull() ?: return@repeat
+                replacePending(GenfoxMessage(
+                    id = turn.turnId,
+                    role = "assistant",
+                    content = turn.text,
+                    state = turn.state,
+                    tools = turn.tools,
+                    inputTokens = turn.usage.inputTokens,
+                    outputTokens = turn.usage.outputTokens,
+                    totalTokens = turn.usage.totalTokens,
+                    costUsd = turn.usage.costUsd,
+                    durationMs = turn.usage.durationMs,
+                ))
+                if (turn.state != "pending") {
+                    sessionName = turn.sessionName
                     asking = false
                     refreshSessions()
                     return@launch
@@ -160,7 +165,7 @@ class GenfoxViewModel : ViewModel() {
     }
 
     private fun replacePending(replacement: GenfoxMessage) {
-        val index = messages.indexOfLast { it.isPending }
+        val index = messages.indexOfLast { it.isPending || it.id == replacement.id }
         messages = if (index < 0) messages + replacement
         else messages.toMutableList().also { it[index] = replacement }
     }
@@ -171,7 +176,7 @@ class GenfoxViewModel : ViewModel() {
     }
 
     private companion object {
-        const val POLL_MS = 2_000L
-        const val MAX_POLLS = 150
+        const val POLL_MS = 700L
+        const val MAX_POLLS = 430
     }
 }

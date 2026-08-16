@@ -1,5 +1,11 @@
 package com.bluefoxconsultant.sms.ui.genfox
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,6 +31,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Hearing
@@ -67,6 +74,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import com.bluefoxconsultant.sms.data.GenfoxMessage
+import com.bluefoxconsultant.sms.data.GenfoxTool
 import com.bluefoxconsultant.sms.ui.speech.DictateButton
 import com.bluefoxconsultant.sms.ui.speech.appendSpoken
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
@@ -258,8 +266,9 @@ private fun EmptyState(modifier: Modifier = Modifier) {
         )
         Spacer(Modifier.size(8.dp))
         Text(
-            "Depuis le téléphone, GenFox consulte — il ne modifie rien. " +
-                "La réponse peut prendre une minute ; vous serez prévenu.",
+            "Mêmes conversations et mêmes outils qu'au bureau : GenFox peut " +
+                "consulter comme modifier. La réponse s'écrit ici au fil de l'eau ; " +
+                "si vous rangez le téléphone, une notification vous préviendra.",
             fontSize = 13.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -283,6 +292,11 @@ private fun Bubble(message: GenfoxMessage, onSpeak: () -> Unit) {
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = if (mine) Alignment.End else Alignment.Start,
     ) {
+        // Tools appear as they are called, above the answer they produced —
+        // the same information the desktop panel shows live.
+        if (!mine && message.tools.isNotEmpty()) {
+            ToolStrip(message.tools, running = message.isPending)
+        }
         Box(
             modifier = Modifier
                 .widthIn(max = 320.dp)
@@ -297,33 +311,129 @@ private fun Bubble(message: GenfoxMessage, onSpeak: () -> Unit) {
                 )
                 .padding(horizontal = 12.dp, vertical = 9.dp),
         ) {
-            if (message.isPending) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(
-                        strokeWidth = 2.dp,
-                        modifier = Modifier.size(14.dp),
+            when {
+                // Nothing written yet: the assistant is reading, not typing.
+                message.isPending && message.content.isBlank() -> ThinkingDots(foreground)
+                else -> SelectionContainer {
+                    Text(
+                        // Markdown, because that is what the assistant writes for
+                        // the desktop panel. A caret while it streams, so a pause
+                        // reads as thinking rather than as a finished answer.
+                        text = renderMarkdown(
+                            message.content + if (message.isPending) "▌" else "",
+                        ),
+                        color = foreground,
+                        fontSize = 15.sp,
                     )
-                    Spacer(Modifier.width(8.dp))
-                    Text("GenFox réfléchit…", fontSize = 14.sp, color = foreground)
-                }
-            } else {
-                SelectionContainer {
-                    Text(message.content, color = foreground, fontSize = 15.sp)
                 }
             }
         }
-        // Replay: an answer read on a screen is sometimes easier heard, and the
-        // engine is already there for the hands-free loop.
         if (!mine && !message.isPending && !message.isError) {
-            IconButton(onClick = onSpeak, modifier = Modifier.size(32.dp)) {
-                Icon(
-                    Icons.Filled.VolumeUp,
-                    contentDescription = "Lire à voix haute",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp),
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onSpeak, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Filled.VolumeUp,
+                        contentDescription = "Lire à voix haute",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+                if (message.usage.hasAny) Text(
+                    usageLabel(message),
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
+    }
+}
+
+/** "12,3 k jetons · 0,04 $ · 4,2 s" — what the turn actually cost. */
+private fun usageLabel(message: GenfoxMessage): String {
+    val usage = message.usage
+    val tokens = if (usage.totalTokens > 0) usage.totalTokens else usage.outputTokens
+    val parts = mutableListOf<String>()
+    parts += if (tokens >= 1000) "%.1f k jetons".format(tokens / 1000.0)
+    else "$tokens jetons"
+    if (usage.costUsd > 0) parts += "%.3f $".format(usage.costUsd)
+    if (usage.durationMs > 0) parts += "%.1f s".format(usage.durationMs / 1000.0)
+    return parts.joinToString(" · ")
+}
+
+@Composable
+private fun ToolStrip(tools: List<GenfoxTool>, running: Boolean) {
+    Row(
+        modifier = Modifier.padding(bottom = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        // The last one is the one in flight while the turn runs; it pulses.
+        tools.forEachIndexed { index, tool ->
+            val live = running && index == tools.lastIndex
+            val alpha by if (live) {
+                rememberInfiniteTransition(label = "outil").animateFloat(
+                    initialValue = 0.45f,
+                    targetValue = 1f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(700, easing = LinearEasing),
+                        repeatMode = RepeatMode.Reverse,
+                    ),
+                    label = "pouls",
+                )
+            } else {
+                remember { mutableStateOf(1f) }
+            }
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = alpha),
+                shape = RoundedCornerShape(8.dp),
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                ) {
+                    Icon(
+                        Icons.Filled.Build,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(11.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        tool.short,
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Three dots breathing — the assistant is working before any word exists. */
+@Composable
+private fun ThinkingDots(color: Color) {
+    val transition = rememberInfiniteTransition(label = "reflexion")
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        repeat(3) { index ->
+            val alpha by transition.animateFloat(
+                initialValue = 0.25f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(600, delayMillis = index * 180, easing = LinearEasing),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+                label = "point$index",
+            )
+            Box(
+                modifier = Modifier
+                    .padding(horizontal = 2.dp)
+                    .size(7.dp)
+                    .background(color.copy(alpha = alpha), CircleShape),
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Text("GenFox travaille…", fontSize = 13.sp, color = color.copy(alpha = 0.75f))
     }
 }
 

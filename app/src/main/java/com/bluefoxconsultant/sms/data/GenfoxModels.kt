@@ -30,6 +30,28 @@ data class GenfoxSession(
 @Serializable
 data class GenfoxSessionsResponse(val sessions: List<GenfoxSession> = emptyList())
 
+/** One tool the assistant reached for, in the order it did. */
+@Serializable
+data class GenfoxTool(
+    val name: String = "",
+    /** Character offset in the answer when the call started — used to order. */
+    val at: Int = 0,
+) {
+    /** `mcp__tentaclaude-bf__odoo_get_task` reads as `odoo_get_task`. */
+    val short: String get() = name.substringAfterLast("__").ifBlank { name }
+}
+
+@Serializable
+data class GenfoxUsage(
+    @SerialName("input_tokens") val inputTokens: Int = 0,
+    @SerialName("output_tokens") val outputTokens: Int = 0,
+    @SerialName("total_tokens") val totalTokens: Int = 0,
+    @SerialName("cost_usd") val costUsd: Double = 0.0,
+    @SerialName("duration_ms") val durationMs: Int = 0,
+) {
+    val hasAny: Boolean get() = totalTokens > 0 || outputTokens > 0
+}
+
 @Serializable
 data class GenfoxMessage(
     val id: Int = 0,
@@ -37,7 +59,16 @@ data class GenfoxMessage(
     val content: String = "",
     /** `pending` while the assistant is still working on that turn. */
     val state: String = "done",
+    val tools: List<GenfoxTool> = emptyList(),
+    @SerialName("input_tokens") val inputTokens: Int = 0,
+    @SerialName("output_tokens") val outputTokens: Int = 0,
+    @SerialName("total_tokens") val totalTokens: Int = 0,
+    @SerialName("cost_usd") val costUsd: Double = 0.0,
+    @SerialName("duration_ms") val durationMs: Int = 0,
 ) {
+    val usage: GenfoxUsage
+        get() = GenfoxUsage(inputTokens, outputTokens, totalTokens, costUsd, durationMs)
+
     val isUser: Boolean get() = role == "user"
     val isPending: Boolean get() = state == "pending"
     val isError: Boolean get() = state == "error"
@@ -70,5 +101,8 @@ data class TurnResponse(
     @SerialName("session_id") val sessionId: Int = 0,
     @SerialName("session_name") val sessionName: String = "",
     val state: String = "pending",
+    /** Grows between polls while the answer is being written. */
     val text: String = "",
+    val tools: List<GenfoxTool> = emptyList(),
+    val usage: GenfoxUsage = GenfoxUsage(),
 )

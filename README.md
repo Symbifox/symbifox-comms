@@ -21,9 +21,11 @@ notifications go through [UnifiedPush](https://unifiedpush.org).
 - **Dictate instead of typing**, in a text message or an email: the recording
   goes to the instance's own transcription service and comes back as text.
   Nothing is sent anywhere else, and the recording is deleted once transcribed
-- **Ask the instance's assistant** from a third tab: it answers from your own
-  Odoo data, read-only from the phone, and tells you when it is done rather
-  than holding you on a spinner
+- **Ask the instance's assistant** from its own tab, with the same tools and
+  the same conversations as the desktop panel: the answer writes itself as it
+  comes, tools show up as they are called, and the turn's tokens and cost are
+  shown when it lands. Put the phone away and a notification tells you it is
+  done
 - **Hands-free**: ask out loud, hear the answer, and it listens again — the
   phone's own speech engine, no cloud voice, nothing running in the background
 - Configurable swipe gestures and quick-action buttons
