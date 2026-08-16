@@ -187,6 +187,8 @@ class AuthViewModel : ViewModel() {
         error = null
         partial = null
         Graph.tokenStore.clearPendingState()
+        // The phone capability was the answer of the instance we are leaving.
+        Graph.phoneStore.invalidate()
         Graph.tokenStore.clearInstance()
     }
 

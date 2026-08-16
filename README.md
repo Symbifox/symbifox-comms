@@ -14,6 +14,9 @@ notifications go through [UnifiedPush](https://unifiedpush.org).
 - Archive, snooze, and a five-second undo on either
 - **Route a message into Odoo**: attach it to a record, or spawn a task,
   helpdesk ticket, lead, invoice, bill or expense straight from an email
+- **Call the person you are texting**, without the call coming from your own
+  number: the server's PBX rings your phone, then dials them and shows the
+  business line. No SIP stack on the handset, no microphone permission
 - Configurable swipe gestures and quick-action buttons
 - Offline cache, so a train tunnel doesn't empty the screen
 - Brand colours picked up from the Odoo instance it connects to
@@ -30,8 +33,11 @@ This is a client. It talks to a REST API served by two Odoo modules, which are
 | --- | --- |
 | `bf_email_management` | the unified mailbox, routing, snoozing, the mobile API |
 | `bf_sms_archive` | SMS threads and sending |
+| `bf_softphone` | calls placed by the instance's PBX (optional, LGPL-3) |
 
-Either module may be absent; the app simply hides the tab it can't reach. The
+Either mailbox module may be absent; the app simply hides the tab it can't
+reach. `bf_softphone` is optional on top of `bf_sms_archive`: without it, the
+call button never appears. The
 instance URL is asked for on first launch and can be changed at any time, so the
 app is not tied to any particular server.
 

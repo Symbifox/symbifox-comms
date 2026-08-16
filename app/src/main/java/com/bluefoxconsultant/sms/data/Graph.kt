@@ -3,11 +3,15 @@ package com.bluefoxconsultant.sms.data
 import android.content.Context
 import com.bluefoxconsultant.sms.network.ApiClient
 import com.bluefoxconsultant.sms.network.MailRepository
+import com.bluefoxconsultant.sms.network.PhoneRepository
 import com.bluefoxconsultant.sms.network.Repository
 
 /** Minimal service locator, initialised from BfSmsApp (and lazily from receivers). */
 object Graph {
     private var initialized = false
+
+    /** REST surface of `bf_softphone`, served by the same instance. */
+    private const val PHONE_API_PATH = "/bf_softphone/mobile/v1"
 
     lateinit var tokenStore: TokenStore
         private set
@@ -22,6 +26,18 @@ object Graph {
     lateinit var mailApi: ApiClient
         private set
     lateinit var mail: MailRepository
+        private set
+
+    /**
+     * Phone half — `bf_softphone`. Its own module path, but the Messages token:
+     * the server module depends on `bf_sms_archive`, so the phone is a
+     * capability of that session rather than a third sign-in.
+     */
+    lateinit var phoneApi: ApiClient
+        private set
+    lateinit var phone: PhoneRepository
+        private set
+    lateinit var phoneStore: PhoneStore
         private set
 
     /** Last-known mailbox on disk, and actions taken while offline. */
@@ -49,8 +65,11 @@ object Graph {
         tokenStore = TokenStore(context.applicationContext)
         smsApi = ApiClient(tokenStore, Service.SMS)
         mailApi = ApiClient(tokenStore, Service.MAIL)
+        phoneApi = ApiClient(tokenStore, Service.SMS, apiPath = PHONE_API_PATH)
         sms = Repository(smsApi)
         mail = MailRepository(mailApi)
+        phone = PhoneRepository(phoneApi)
+        phoneStore = PhoneStore(phone)
         mailCache = MailCache(context.applicationContext)
         outbox = MailOutbox(context.applicationContext)
         brandStore = BrandStore(context.applicationContext)

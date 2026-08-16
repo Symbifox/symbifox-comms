@@ -56,6 +56,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.bluefoxconsultant.sms.data.Message
 import com.bluefoxconsultant.sms.ui.clockTime
 import com.bluefoxconsultant.sms.ui.lines.LinePickerSheet
+import com.bluefoxconsultant.sms.ui.phone.CallAction
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -134,6 +135,11 @@ fun ConversationScreen(
                     }
                 },
                 actions = {
+                    CallAction(
+                        number = vm.thread?.phone.orEmpty(),
+                        display = vm.title,
+                        snackbar = snackbar,
+                    )
                     if (vm.lines.size > 1) {
                         IconButton(onClick = { linePickerOpen = true }) {
                             Icon(

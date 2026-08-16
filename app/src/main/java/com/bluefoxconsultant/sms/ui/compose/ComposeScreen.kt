@@ -29,6 +29,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -48,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bluefoxconsultant.sms.data.Contact
+import com.bluefoxconsultant.sms.ui.phone.CallAction
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
 
 @Composable
@@ -56,7 +59,9 @@ fun ComposeScreen(
     onSent: (Int) -> Unit,
     vm: ComposeViewModel = viewModel(),
 ) {
+    val snackbar = remember { SnackbarHostState() }
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
                 title = { Text("Nouveau message", fontWeight = FontWeight.SemiBold) },
@@ -65,10 +70,20 @@ fun ComposeScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
                     }
                 },
+                actions = {
+                    // Same field serves both: whoever you were about to text is
+                    // whoever you were about to call.
+                    CallAction(
+                        number = vm.recipient,
+                        display = vm.recipientName ?: vm.recipient,
+                        snackbar = snackbar,
+                    )
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = BrandAccent,
                     titleContentColor = Color.White,
                     navigationIconContentColor = Color.White,
+                    actionIconContentColor = Color.White,
                 ),
             )
         },

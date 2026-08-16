@@ -35,6 +35,9 @@ class SettingsViewModel : ViewModel() {
             Graph.outbox.clear()
             // The next person to sign in may work for someone else.
             Graph.brandStore.reset()
+            // Their phone rights are not this user's, and the call button must
+            // not survive the sign-out that revoked the token behind it.
+            Graph.phoneStore.invalidate()
             store.clearAllTokens()
         }
     }

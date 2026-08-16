@@ -26,6 +26,13 @@ class ApiException(val code: Int, val err: String) : Exception(err)
 class ApiClient(
     private val tokenStore: TokenStore,
     val service: Service,
+    /**
+     * Module path when this client speaks to a surface other than the service's
+     * own. The phone rides on the Messages token but lives under its own Odoo
+     * module, and it must NOT become a third [Service]: that enum drives the
+     * tabs and the login screens, and the phone is a capability, not a tab.
+     */
+    private val apiPath: String? = null,
 ) {
 
     val json = Json {
@@ -63,8 +70,11 @@ class ApiClient(
     /** `<instance>/<module>/mobile/v1` rebuilt from the stored instance per call. */
     private fun base(): String {
         val instance = tokenStore.instanceUrl ?: throw ApiException(0, "no_instance")
-        return service.baseUrl(instance)
+        return baseFor(instance)
     }
+
+    private fun baseFor(instance: String): String =
+        apiPath?.let { instance.trimEnd('/') + it } ?: service.baseUrl(instance)
 
     fun postJson(path: String, body: String): String = exec(
         Request.Builder().url(base() + path)
@@ -111,7 +121,7 @@ class ApiClient(
      */
     fun pingInfo(instance: String): com.bluefoxconsultant.sms.data.PingResponse? = try {
         val request = Request.Builder()
-            .url(service.baseUrl(instance) + "/ping").get().build()
+            .url(baseFor(instance) + "/ping").get().build()
         client.newCall(request).execute().use { response ->
             val text = response.body?.string().orEmpty()
             if (!response.isSuccessful) null
@@ -125,7 +135,7 @@ class ApiClient(
 
     fun ping(instance: String): Boolean = try {
         val request = Request.Builder()
-            .url(service.baseUrl(instance) + "/ping").get().build()
+            .url(baseFor(instance) + "/ping").get().build()
         client.newCall(request).execute().use { response ->
             val text = response.body?.string().orEmpty()
             response.isSuccessful && runCatching {
