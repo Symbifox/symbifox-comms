@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.bluefoxconsultant.sms.data.ActiveCall
 import com.bluefoxconsultant.sms.data.CallLogEntry
 import com.bluefoxconsultant.sms.data.Graph
 import com.bluefoxconsultant.sms.data.PhoneContact
@@ -25,7 +26,13 @@ class PhoneViewModel : ViewModel() {
     var error by mutableStateOf<String?>(null)
         private set
 
+    var active by mutableStateOf<List<ActiveCall>>(emptyList())
+        private set
+    var hangingUp by mutableStateOf(false)
+        private set
+
     private var searchJob: Job? = null
+    private var watchJob: Job? = null
 
     val callable: Boolean get() = isCallable(dialled)
 
@@ -58,6 +65,47 @@ class PhoneViewModel : ViewModel() {
         matches = emptyList()
     }
 
+    /**
+     * Watches for a call in progress while the screen is open.
+     *
+     * The handset does not carry the call, so it cannot know on its own that
+     * one is up: the PBX is the only source of truth. Polling stops with the
+     * screen — nothing runs in the background.
+     */
+    fun watch() {
+        watchJob?.cancel()
+        watchJob = viewModelScope.launch {
+            while (true) {
+                active = runCatching { Graph.phone.active() }.getOrDefault(active)
+                // Faster while something is up, so the timer looks alive and a
+                // hangup elsewhere is noticed quickly.
+                delay(if (active.isEmpty()) IDLE_POLL_MS else BUSY_POLL_MS)
+            }
+        }
+    }
+
+    fun stopWatching() {
+        watchJob?.cancel()
+        watchJob = null
+    }
+
+    fun hangup() {
+        if (hangingUp) return
+        viewModelScope.launch {
+            hangingUp = true
+            try {
+                Graph.phone.hangup()
+                active = emptyList()
+                // The log gains a line once the call ends.
+                refresh()
+            } catch (e: Exception) {
+                error = "Impossible de raccrocher."
+            } finally {
+                hangingUp = false
+            }
+        }
+    }
+
     fun refresh() {
         viewModelScope.launch {
             try {
@@ -83,5 +131,16 @@ class PhoneViewModel : ViewModel() {
             delay(250)
             matches = runCatching { Graph.phone.contacts(term) }.getOrDefault(emptyList())
         }
+    }
+
+    override fun onCleared() {
+        watchJob?.cancel()
+        searchJob?.cancel()
+        super.onCleared()
+    }
+
+    private companion object {
+        const val IDLE_POLL_MS = 4_000L
+        const val BUSY_POLL_MS = 1_500L
     }
 }

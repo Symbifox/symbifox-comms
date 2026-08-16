@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.CallMissed
 import androidx.compose.material.icons.automirrored.filled.CallReceived
 import androidx.compose.material.icons.filled.Backspace
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -32,10 +33,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -67,6 +71,11 @@ fun PhoneScreen(vm: PhoneViewModel = viewModel()) {
     var calling by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { vm.refresh() }
+    // Le guet s'arrête avec l'écran : rien ne tourne en arrière-plan.
+    DisposableEffect(Unit) {
+        vm.watch()
+        onDispose { vm.stopWatching() }
+    }
     LaunchedEffect(vm.error) {
         vm.error?.let {
             snackbar.showSnackbar(it)
@@ -92,6 +101,16 @@ fun PhoneScreen(vm: PhoneViewModel = viewModel()) {
                 .fillMaxSize()
                 .padding(padding),
         ) {
+            // Un appel en cours prend le haut de l'écran : c'est la seule
+            // commande dont on a besoin tant qu'il dure, et le combiné ne peut
+            // pas la deviner — c'est le PBX qui porte l'appel.
+            vm.active.firstOrNull()?.let { call ->
+                InCallBar(
+                    call = call,
+                    hangingUp = vm.hangingUp,
+                    onHangup = vm::hangup,
+                )
+            }
             Box(Modifier.weight(1f)) {
                 when {
                     // What you are dialling decides what is useful underneath:
@@ -158,6 +177,53 @@ fun PhoneScreen(vm: PhoneViewModel = viewModel()) {
 }
 
 private val CALL_GREEN = Color(0xFF2E9E5B)
+
+@Composable
+private fun InCallBar(
+    call: com.bluefoxconsultant.sms.data.ActiveCall,
+    hangingUp: Boolean,
+    onHangup: () -> Unit,
+) {
+    Surface(color = CALL_GREEN) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (call.isUp) "En communication" else "Sonnerie…",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                )
+                Text(
+                    listOfNotNull(
+                        call.number.ifBlank { null },
+                        call.clock.takeIf { call.isUp },
+                    ).joinToString(" · "),
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                )
+            }
+            TextButton(onClick = onHangup, enabled = !hangingUp) {
+                Icon(
+                    Icons.Filled.CallEnd,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    if (hangingUp) "…" else "Raccrocher",
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+    }
+}
 
 @Composable
 private fun Keypad(

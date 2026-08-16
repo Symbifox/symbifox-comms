@@ -2,7 +2,10 @@ package com.bluefoxconsultant.sms.network
 
 import com.bluefoxconsultant.sms.data.CallRequest
 import com.bluefoxconsultant.sms.data.CallResponse
+import com.bluefoxconsultant.sms.data.ActiveCall
+import com.bluefoxconsultant.sms.data.ActiveCallsResponse
 import com.bluefoxconsultant.sms.data.CallLogEntry
+import com.bluefoxconsultant.sms.data.HangupResponse
 import com.bluefoxconsultant.sms.data.CallLogResponse
 import com.bluefoxconsultant.sms.data.PhoneConfig
 import com.bluefoxconsultant.sms.data.PhoneContact
@@ -47,6 +50,21 @@ class PhoneRepository(private val api: ApiClient) {
     /** The user's own call log, newest first. */
     suspend fun calls(limit: Int = 40): List<CallLogEntry> = withContext(Dispatchers.IO) {
         json.decodeFromString<CallLogResponse>(api.get("/calls?limit=$limit")).calls
+    }
+
+    /** Calls the PBX is carrying for this user right now. */
+    suspend fun active(): List<ActiveCall> = withContext(Dispatchers.IO) {
+        json.decodeFromString<ActiveCallsResponse>(api.get("/active")).calls
+    }
+
+    /**
+     * Ends the call. Without a channel the server hangs up everything of this
+     * user's — which is what a "Raccrocher" button means when a call has two
+     * legs and the person pressing it thinks of it as one call.
+     */
+    suspend fun hangup(channel: String? = null): HangupResponse = withContext(Dispatchers.IO) {
+        val body = channel?.let { """{"channel":"$it"}""" } ?: "{}"
+        json.decodeFromString(api.postJson("/hangup", body))
     }
 
     /** Asks the PBX to ring [ring] (or the user's default) and dial [number]. */

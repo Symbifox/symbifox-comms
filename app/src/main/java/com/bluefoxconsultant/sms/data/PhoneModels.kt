@@ -81,3 +81,30 @@ data class CallLogEntry(
 
 @Serializable
 data class CallLogResponse(val calls: List<CallLogEntry> = emptyList())
+
+/**
+ * A call the PBX is carrying right now for this user.
+ *
+ * The handset never held the call, so ending it means asking the server to
+ * hang up the channel — hence the channel name travelling back and forth.
+ */
+@Serializable
+data class ActiveCall(
+    val channel: String = "",
+    val number: String = "",
+    val seconds: Int = 0,
+    /** Asterisk channel state: `Up`, `Ringing`, `Ring`… */
+    val state: String = "",
+) {
+    val isUp: Boolean get() = state.equals("Up", ignoreCase = true)
+    val clock: String get() = "%d:%02d".format(seconds / 60, seconds % 60)
+}
+
+@Serializable
+data class ActiveCallsResponse(val calls: List<ActiveCall> = emptyList())
+
+@Serializable
+data class HangupResponse(
+    val ok: Boolean = false,
+    @SerialName("hung_up") val hungUp: Int = 0,
+)
