@@ -14,9 +14,10 @@ notifications go through [UnifiedPush](https://unifiedpush.org).
 - Archive, snooze, and a five-second undo on either
 - **Route a message into Odoo**: attach it to a record, or spawn a task,
   helpdesk ticket, lead, invoice, bill or expense straight from an email
-- **Call the person you are texting**, without the call coming from your own
-  number: the server's PBX rings your phone, then dials them and shows the
-  business line. No SIP stack on the handset, no microphone permission
+- **A keypad in its own tab**, with contact search and a call log — plus a call
+  button inside any conversation. The call comes from the server's PBX, which
+  rings your phone and then dials, so the other end sees the business line
+  rather than your own number. No SIP stack on the handset
 - **Dictate instead of typing**, in a text message or an email: the recording
   goes to the instance's own transcription service and comes back as text.
   Nothing is sent anywhere else, and the recording is deleted once transcribed

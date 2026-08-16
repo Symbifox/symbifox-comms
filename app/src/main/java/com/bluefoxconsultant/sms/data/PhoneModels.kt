@@ -44,3 +44,31 @@ data class CallResponse(
     val number: String = "",
     @SerialName("contact_name") val contactName: String = "",
 )
+
+@Serializable
+data class PhoneContact(
+    val id: Int = 0,
+    val name: String = "",
+    val number: String = "",
+)
+
+@Serializable
+data class PhoneContactsResponse(val contacts: List<PhoneContact> = emptyList())
+
+/** One line of the call log — what a phone calls "Recents". */
+@Serializable
+data class CallLogEntry(
+    val id: Int = 0,
+    /** `incoming`, `outgoing` or `missed`. */
+    val direction: String = "",
+    val number: String = "",
+    val name: String = "",
+    val date: String = "",
+    val duration: Int = 0,
+) {
+    val isMissed: Boolean get() = direction == "missed"
+    val isOutgoing: Boolean get() = direction == "outgoing"
+}
+
+@Serializable
+data class CallLogResponse(val calls: List<CallLogEntry> = emptyList())

@@ -57,17 +57,44 @@ fun CallAction(
 
     var asking by remember { mutableStateOf(false) }
     var placing by remember { mutableStateOf(false) }
-    var ring by remember(config.defaultRing) { mutableStateOf(config.defaultRing) }
-    val scope = rememberCoroutineScope()
 
     IconButton(onClick = { asking = true }, enabled = enabled && !placing) {
         Icon(Icons.Filled.Call, contentDescription = "Appeler")
     }
 
-    if (!asking) return
+    if (asking) {
+        CallDialog(
+            number = number,
+            display = display,
+            snackbar = snackbar,
+            onDismiss = { asking = false },
+            onPlacing = { placing = it },
+        )
+    }
+}
+
+/**
+ * The confirmation, shared by the in-conversation button and the keypad.
+ *
+ * It states the two things nobody can guess: something else rings first, and
+ * the number the other end sees is not this phone's. When both a callback
+ * number and a desk extension exist, it also asks which one should ring.
+ */
+@Composable
+fun CallDialog(
+    number: String,
+    display: String,
+    snackbar: SnackbarHostState,
+    onDismiss: () -> Unit,
+    onPlacing: (Boolean) -> Unit = {},
+) {
+    val config by Graph.phoneStore.config.collectAsStateWithLifecycle()
+    var ring by remember(config.defaultRing) { mutableStateOf(config.defaultRing) }
+    var placing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     AlertDialog(
-        onDismissRequest = { if (!placing) asking = false },
+        onDismissRequest = { if (!placing) onDismiss() },
         title = { Text("Appeler ${display.ifBlank { number }}") },
         text = {
             Column {
@@ -76,8 +103,6 @@ fun CallAction(
                         "compose le numéro en affichant la ligne d'affaires.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                // Only worth a choice when both targets exist. With one, the
-                // dialog stays a plain confirmation.
                 if (config.canRingCallback && config.canRingExtension) {
                     RingChoice(
                         label = "Mon numéro de rappel (${config.callbackNumber})",
@@ -97,31 +122,30 @@ fun CallAction(
                 enabled = !placing,
                 onClick = {
                     placing = true
+                    onPlacing(true)
                     scope.launch {
                         try {
                             val response = Graph.phone.call(number, ring)
-                            asking = false
-                            snackbar.showSnackbar(
-                                "Le PBX fait sonner ${response.ringLabel}.")
+                            onDismiss()
+                            snackbar.showSnackbar("Le PBX fait sonner ${response.ringLabel}.")
                         } catch (e: ApiException) {
-                            asking = false
                             // The server sends a sentence, not a code: unknown
                             // number, no callback number set, rate limit. Show it.
+                            onDismiss()
                             snackbar.showSnackbar(e.err)
                         } catch (e: Exception) {
-                            asking = false
+                            onDismiss()
                             snackbar.showSnackbar("Appel impossible pour l'instant.")
                         } finally {
                             placing = false
+                            onPlacing(false)
                         }
                     }
                 },
             ) { Text(if (placing) "Un instant…" else "Appeler") }
         },
         dismissButton = {
-            TextButton(enabled = !placing, onClick = { asking = false }) {
-                Text("Annuler")
-            }
+            TextButton(enabled = !placing, onClick = onDismiss) { Text("Annuler") }
         },
     )
 }

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Dialpad
 import androidx.compose.material.icons.filled.MailOutline
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -55,6 +56,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bluefoxconsultant.sms.ui.compose.ComposeScreen
 import com.bluefoxconsultant.sms.ui.conversation.ConversationScreen
 import com.bluefoxconsultant.sms.ui.genfox.GenfoxScreen
+import com.bluefoxconsultant.sms.ui.phone.PhoneScreen
 import com.bluefoxconsultant.sms.ui.instance.InstanceScreen
 import com.bluefoxconsultant.sms.ui.login.LoginScreen
 import com.bluefoxconsultant.sms.ui.mail.MailComposeScreen
@@ -248,14 +250,21 @@ private fun HomeShell(
     // login of its own, so it must not join the enum that drives the login
     // screens. It earns a tab only once the server says it is configured.
     val genfox by Graph.genfoxStore.config.collectAsStateWithLifecycle()
+    val phone by Graph.phoneStore.config.collectAsStateWithLifecycle()
     LaunchedEffect(tokens.isNotEmpty()) {
-        if (tokens.isNotEmpty()) Graph.genfoxStore.ensureLoaded()
+        if (tokens.isNotEmpty()) {
+            Graph.genfoxStore.ensureLoaded()
+            // Asked here rather than only from a conversation's call button, so
+            // the keypad can earn its own tab.
+            Graph.phoneStore.ensureLoaded()
+        }
     }
 
     val nav = rememberNavController()
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
-    val onRoot = route == Tabs.SMS || route == Tabs.MAIL || route == Tabs.GENFOX
+    val onRoot = route == Tabs.SMS || route == Tabs.MAIL ||
+        route == Tabs.GENFOX || route == Tabs.PHONE
 
     // A push for one tab switches to it before opening the detail screen.
     LaunchedEffect(pendingThread.value, tabs) {
@@ -310,6 +319,7 @@ private fun HomeShell(
                 )
             }
             composable(Tabs.GENFOX) { GenfoxScreen() }
+            composable(Tabs.PHONE) { PhoneScreen() }
             composable(Tabs.ARCHIVED) {
                 ArchivedScreen(
                     onBack = { nav.popBackStack() },
@@ -391,6 +401,9 @@ private fun HomeShell(
                         Triple(Tabs.SMS, service.label, Icons.AutoMirrored.Filled.Chat)
                     },
                 )
+            }
+            if (phone.enabled && tokens.isNotEmpty()) {
+                add(Triple(Tabs.PHONE, "Téléphone", Icons.Filled.Dialpad))
             }
             if (genfox.enabled && tokens.isNotEmpty()) {
                 add(Triple(Tabs.GENFOX, "GenFox", Icons.Filled.AutoAwesome))
@@ -485,4 +498,5 @@ private object Tabs {
     const val MAIL_THREAD = "mail_thread"
     const val MAIL_COMPOSE = "mail_compose"
     const val GENFOX = "genfox"
+    const val PHONE = "phone"
 }
