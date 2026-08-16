@@ -89,6 +89,16 @@ class PushReceiver : MessagingReceiver() {
             )
             "mail_clear" -> Notifier.cancelMail(appContext, int("email_id") ?: return)
             "mail_clear_all" -> Notifier.cancelAllMail(appContext)
+
+            // ---- bf_claude_chat ----
+            // The turn was asked minutes ago and finished without the screen
+            // being open; this is what makes "ask and pocket the phone" work.
+            "genfox" -> Notifier.showGenfox(
+                appContext,
+                str("title") ?: "GenFox",
+                str("body").orEmpty(),
+                int("session_id") ?: 0,
+            )
         }
     }
 

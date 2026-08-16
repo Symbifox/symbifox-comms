@@ -39,6 +39,7 @@ class SettingsViewModel : ViewModel() {
             // not survive the sign-out that revoked the token behind it.
             Graph.phoneStore.invalidate()
             Graph.speechStore.invalidate()
+            Graph.genfoxStore.invalidate()
             store.clearAllTokens()
         }
     }

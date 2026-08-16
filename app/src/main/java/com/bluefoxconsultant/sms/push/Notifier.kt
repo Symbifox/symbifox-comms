@@ -15,6 +15,7 @@ object Notifier {
 
     const val CHANNEL_ID = "sms"
     const val CHANNEL_MAIL = "mail"
+    const val CHANNEL_GENFOX = "genfox"
     const val EXTRA_THREAD_ID = "thread_id"
     const val EXTRA_NOTIF_ID = "notif_id"
     const val EXTRA_EMAIL_ID = "email_id"
@@ -26,6 +27,10 @@ object Notifier {
      * notifications off the shade.
      */
     const val TAG_MAIL = "mail"
+
+    /** Same reasoning for the assistant: its own tag, cleared on its own. */
+    const val TAG_GENFOX = "genfox"
+    const val EXTRA_GENFOX_SESSION = "genfox_session_id"
 
     private const val BF_BLUE = 0xFF29ABE2.toInt()
 
@@ -124,6 +129,51 @@ object Notifier {
 
         try {
             NotificationManagerCompat.from(context).notify(id, notification)
+        } catch (e: SecurityException) {
+            // POST_NOTIFICATIONS not granted — nothing to do.
+        }
+    }
+
+    private fun ensureGenfoxChannel(context: Context) {
+        val nm = context.getSystemService(NotificationManager::class.java) ?: return
+        if (nm.getNotificationChannel(CHANNEL_GENFOX) == null) {
+            // Default importance, not high: an answer you asked for a minute
+            // ago is worth a glance, not an interruption.
+            val channel = NotificationChannel(
+                CHANNEL_GENFOX,
+                "GenFox",
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ).apply {
+                description = "Réponses de l'assistant"
+            }
+            nm.createNotificationChannel(channel)
+        }
+    }
+
+    /** The assistant finished a turn the phone did not stay to watch. */
+    fun showGenfox(context: Context, title: String, body: String, sessionId: Int) {
+        ensureGenfoxChannel(context)
+        val id = "genfox-$sessionId".hashCode()
+        val contentIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(EXTRA_GENFOX_SESSION, sessionId)
+        }
+        val contentPi = PendingIntent.getActivity(
+            context, id, contentIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notification = NotificationCompat.Builder(context, CHANNEL_GENFOX)
+            .setSmallIcon(R.drawable.ic_stat_sms)
+            .setColor(BF_BLUE)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setAutoCancel(true)
+            .setContentIntent(contentPi)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(TAG_GENFOX, id, notification)
         } catch (e: SecurityException) {
             // POST_NOTIFICATIONS not granted — nothing to do.
         }

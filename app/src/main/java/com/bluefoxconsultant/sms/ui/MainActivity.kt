@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.MailOutline
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -50,8 +51,10 @@ import androidx.navigation.navArgument
 import com.bluefoxconsultant.sms.data.Graph
 import com.bluefoxconsultant.sms.data.Service
 import com.bluefoxconsultant.sms.push.Notifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bluefoxconsultant.sms.ui.compose.ComposeScreen
 import com.bluefoxconsultant.sms.ui.conversation.ConversationScreen
+import com.bluefoxconsultant.sms.ui.genfox.GenfoxScreen
 import com.bluefoxconsultant.sms.ui.instance.InstanceScreen
 import com.bluefoxconsultant.sms.ui.login.LoginScreen
 import com.bluefoxconsultant.sms.ui.mail.MailComposeScreen
@@ -74,6 +77,7 @@ class MainActivity : ComponentActivity() {
     // Push notification → open a conversation.
     private val pendingThread = mutableStateOf<Int?>(null)
     private val pendingMailThread = mutableStateOf<String?>(null)
+    private val pendingGenfox = mutableStateOf<Int?>(null)
 
     // Web-login redirect (com.bluefoxconsultant.sms://auth?code=&state=).
     private val pendingAuthUri = mutableStateOf<String?>(null)
@@ -87,7 +91,7 @@ class MainActivity : ComponentActivity() {
         requestNotificationPermission()
         setContent {
             BfSmsTheme {
-                AppRoot(pendingThread, pendingMailThread, pendingAuthUri)
+                AppRoot(pendingThread, pendingMailThread, pendingGenfox, pendingAuthUri)
             }
         }
     }
@@ -114,7 +118,11 @@ class MainActivity : ComponentActivity() {
         // empty one, which lands on the mail tab without opening anything.
         if (intent.hasExtra(Notifier.EXTRA_EMAIL_ID)) {
             pendingMailThread.value = intent.getStringExtra(Notifier.EXTRA_THREAD_KEY).orEmpty()
+            return
         }
+        // The assistant finished a turn while the app was away.
+        val genfoxSession = intent.getIntExtra(Notifier.EXTRA_GENFOX_SESSION, -1)
+        if (genfoxSession > 0) pendingGenfox.value = genfoxSession
     }
 
     private fun requestNotificationPermission() {
@@ -139,6 +147,7 @@ class MainActivity : ComponentActivity() {
 private fun AppRoot(
     pendingThread: MutableState<Int?>,
     pendingMailThread: MutableState<String?>,
+    pendingGenfox: MutableState<Int?>,
     pendingAuthUri: MutableState<String?>,
 ) {
     val nav = rememberNavController()
@@ -180,6 +189,7 @@ private fun AppRoot(
             HomeShell(
                 rootNav = nav,
                 pendingThread = pendingThread,
+                pendingGenfox = pendingGenfox,
                 pendingMailThread = pendingMailThread,
                 pendingAuthUri = pendingAuthUri,
             )
@@ -204,6 +214,7 @@ private fun HomeShell(
     rootNav: NavHostController,
     pendingThread: MutableState<Int?>,
     pendingMailThread: MutableState<String?>,
+    pendingGenfox: MutableState<Int?>,
     pendingAuthUri: MutableState<String?>,
 ) {
     val tokenStore = Graph.tokenStore
@@ -233,10 +244,18 @@ private fun HomeShell(
     // signed in to, with no way back to it. A token is proof enough.
     val tabs = Service.entries.filter { it in available || tokens.containsKey(it) }
 
+    // GenFox is a capability of an existing session, not a Service: it has no
+    // login of its own, so it must not join the enum that drives the login
+    // screens. It earns a tab only once the server says it is configured.
+    val genfox by Graph.genfoxStore.config.collectAsStateWithLifecycle()
+    LaunchedEffect(tokens.isNotEmpty()) {
+        if (tokens.isNotEmpty()) Graph.genfoxStore.ensureLoaded()
+    }
+
     val nav = rememberNavController()
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
-    val onRoot = route == Tabs.SMS || route == Tabs.MAIL
+    val onRoot = route == Tabs.SMS || route == Tabs.MAIL || route == Tabs.GENFOX
 
     // A push for one tab switches to it before opening the detail screen.
     LaunchedEffect(pendingThread.value, tabs) {
@@ -244,6 +263,14 @@ private fun HomeShell(
         if (Service.SMS !in tabs) return@LaunchedEffect
         nav.navigate("${Tabs.CONVERSATION}/$id")
         pendingThread.value = null
+    }
+    // Tapping the assistant's notification lands on its tab. The screen picks
+    // the latest conversation itself, which is the one that just answered.
+    LaunchedEffect(pendingGenfox.value, genfox.enabled) {
+        if (pendingGenfox.value == null) return@LaunchedEffect
+        if (!genfox.enabled) return@LaunchedEffect
+        nav.navigate(Tabs.GENFOX) { launchSingleTop = true }
+        pendingGenfox.value = null
     }
     LaunchedEffect(pendingMailThread.value, tabs) {
         val key = pendingMailThread.value ?: return@LaunchedEffect
@@ -282,6 +309,7 @@ private fun HomeShell(
                     },
                 )
             }
+            composable(Tabs.GENFOX) { GenfoxScreen() }
             composable(Tabs.ARCHIVED) {
                 ArchivedScreen(
                     onBack = { nav.popBackStack() },
@@ -354,10 +382,23 @@ private fun HomeShell(
         // Shown on every root screen whenever the server offers both halves —
         // including before the second is connected, so the way across is
         // always visible rather than something you have to already know about.
-        if (tabs.size > 1 && onRoot) {
+        val bottomTabs = buildList {
+            tabs.forEach { service ->
+                add(
+                    if (service == Service.MAIL) {
+                        Triple(Tabs.MAIL, service.label, Icons.Filled.MailOutline)
+                    } else {
+                        Triple(Tabs.SMS, service.label, Icons.AutoMirrored.Filled.Chat)
+                    },
+                )
+            }
+            if (genfox.enabled && tokens.isNotEmpty()) {
+                add(Triple(Tabs.GENFOX, "GenFox", Icons.Filled.AutoAwesome))
+            }
+        }
+        if (bottomTabs.size > 1 && onRoot) {
             NavigationBar {
-                tabs.forEach { service ->
-                    val tabRoute = if (service == Service.MAIL) Tabs.MAIL else Tabs.SMS
+                bottomTabs.forEach { (tabRoute, label, icon) ->
                     NavigationBarItem(
                         selected = route == tabRoute,
                         onClick = {
@@ -367,14 +408,8 @@ private fun HomeShell(
                                 restoreState = true
                             }
                         },
-                        icon = {
-                            Icon(
-                                if (service == Service.MAIL) Icons.Filled.MailOutline
-                                else Icons.AutoMirrored.Filled.Chat,
-                                contentDescription = service.label,
-                            )
-                        },
-                        label = { Text(service.label) },
+                        icon = { Icon(icon, contentDescription = label) },
+                        label = { Text(label) },
                     )
                 }
             }
@@ -449,4 +484,5 @@ private object Tabs {
     const val MAIL = "mail"
     const val MAIL_THREAD = "mail_thread"
     const val MAIL_COMPOSE = "mail_compose"
+    const val GENFOX = "genfox"
 }

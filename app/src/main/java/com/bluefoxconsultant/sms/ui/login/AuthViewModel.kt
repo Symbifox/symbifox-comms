@@ -190,6 +190,7 @@ class AuthViewModel : ViewModel() {
         // Phone and dictation were the answers of the instance we are leaving.
         Graph.phoneStore.invalidate()
         Graph.speechStore.invalidate()
+        Graph.genfoxStore.invalidate()
         Graph.tokenStore.clearInstance()
     }
 

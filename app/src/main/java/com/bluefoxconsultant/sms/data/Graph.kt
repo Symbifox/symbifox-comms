@@ -2,6 +2,7 @@ package com.bluefoxconsultant.sms.data
 
 import android.content.Context
 import com.bluefoxconsultant.sms.network.ApiClient
+import com.bluefoxconsultant.sms.network.GenfoxRepository
 import com.bluefoxconsultant.sms.network.MailRepository
 import com.bluefoxconsultant.sms.network.PhoneRepository
 import com.bluefoxconsultant.sms.network.Repository
@@ -16,6 +17,9 @@ object Graph {
 
     /** REST surface of `bf_speech` (dictation). */
     private const val SPEECH_API_PATH = "/bf_speech/mobile/v1"
+
+    /** REST surface of `bf_claude_chat` (the assistant). */
+    private const val GENFOX_API_PATH = "/bf_claude_chat/mobile/v1"
 
     lateinit var tokenStore: TokenStore
         private set
@@ -51,6 +55,15 @@ object Graph {
     lateinit var speech: SpeechRepository
         private set
     lateinit var speechStore: SpeechStore
+        private set
+
+    /**
+     * GenFox — `bf_claude_chat`. Read-only from a phone by construction, and
+     * asked asynchronously: a turn outlives the screen that started it.
+     */
+    lateinit var genfox: GenfoxRepository
+        private set
+    lateinit var genfoxStore: GenfoxStore
         private set
 
     /** Last-known mailbox on disk, and actions taken while offline. */
@@ -89,6 +102,12 @@ object Graph {
             tokenStore,
         )
         speechStore = SpeechStore(speech)
+        genfox = GenfoxRepository(
+            ApiClient(tokenStore, Service.SMS, apiPath = GENFOX_API_PATH),
+            ApiClient(tokenStore, Service.MAIL, apiPath = GENFOX_API_PATH),
+            tokenStore,
+        )
+        genfoxStore = GenfoxStore(genfox)
         mailCache = MailCache(context.applicationContext)
         outbox = MailOutbox(context.applicationContext)
         brandStore = BrandStore(context.applicationContext)

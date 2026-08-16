@@ -20,6 +20,9 @@ notifications go through [UnifiedPush](https://unifiedpush.org).
 - **Dictate instead of typing**, in a text message or an email: the recording
   goes to the instance's own transcription service and comes back as text.
   Nothing is sent anywhere else, and the recording is deleted once transcribed
+- **Ask the instance's assistant** from a third tab: it answers from your own
+  Odoo data, read-only from the phone, and tells you when it is done rather
+  than holding you on a spinner
 - Configurable swipe gestures and quick-action buttons
 - Offline cache, so a train tunnel doesn't empty the screen
 - Brand colours picked up from the Odoo instance it connects to
@@ -38,6 +41,7 @@ This is a client. It talks to a REST API served by two Odoo modules, which are
 | `bf_sms_archive` | SMS threads and sending |
 | `bf_softphone` | calls placed by the instance's PBX (optional, LGPL-3) |
 | `bf_speech` | dictation, via the instance's transcription service (optional, LGPL-3) |
+| `bf_claude_chat` | the assistant, read-only from mobile (optional) |
 
 Either mailbox module may be absent; the app simply hides the tab it can't
 reach. `bf_softphone` is optional on top of `bf_sms_archive`: without it, the
