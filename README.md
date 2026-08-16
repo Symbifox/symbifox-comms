@@ -23,6 +23,8 @@ notifications go through [UnifiedPush](https://unifiedpush.org).
 - **Ask the instance's assistant** from a third tab: it answers from your own
   Odoo data, read-only from the phone, and tells you when it is done rather
   than holding you on a spinner
+- **Hands-free**: ask out loud, hear the answer, and it listens again — the
+  phone's own speech engine, no cloud voice, nothing running in the background
 - Configurable swipe gestures and quick-action buttons
 - Offline cache, so a train tunnel doesn't empty the screen
 - Brand colours picked up from the Odoo instance it connects to

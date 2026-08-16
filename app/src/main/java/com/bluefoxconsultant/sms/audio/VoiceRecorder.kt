@@ -75,6 +75,15 @@ class VoiceRecorder(private val context: Context) {
         }
     }
 
+    /**
+     * Peak amplitude since the previous call, 0 to 32767, or 0 when idle.
+     *
+     * This is what lets the hands-free loop notice you stopped talking without
+     * shipping a voice-activity model: poll it, and treat a run of quiet frames
+     * as the end of a sentence.
+     */
+    fun amplitude(): Int = runCatching { recorder?.maxAmplitude ?: 0 }.getOrDefault(0)
+
     /** Abandons the recording and leaves nothing behind. */
     fun cancel() {
         val rec = recorder ?: return

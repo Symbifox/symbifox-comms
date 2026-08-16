@@ -27,6 +27,9 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Hearing
+import androidx.compose.material.icons.filled.HeadsetMic
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -43,22 +46,31 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import com.bluefoxconsultant.sms.data.GenfoxMessage
 import com.bluefoxconsultant.sms.ui.speech.DictateButton
 import com.bluefoxconsultant.sms.ui.speech.appendSpoken
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
+import kotlinx.coroutines.launch
 
 /**
  * Ask GenFox from the phone.
@@ -75,6 +87,38 @@ fun GenfoxScreen(vm: GenfoxViewModel = viewModel()) {
     val snackbar = remember { SnackbarHostState() }
     val listState = rememberLazyListState()
     var historyOpen by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val handsFree = remember {
+        HandsFreeController(
+            context = context,
+            scope = scope,
+            onQuestion = { vm.ask(it) },
+            onNotice = { scope.launch { snackbar.showSnackbar(it) } },
+        )
+    }
+    // The engine and the microphone both outlive a recomposition and neither
+    // should outlive the screen.
+    DisposableEffect(Unit) { onDispose { handsFree.release() } }
+
+    val askPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) handsFree.start()
+        else scope.launch { snackbar.showSnackbar("Sans accès au micro, pas de mains libres.") }
+    }
+
+    // A finished turn is what drives the loop forward: say it, then listen again.
+    val last = vm.messages.lastOrNull()
+    LaunchedEffect(last?.state, last?.content) {
+        if (!handsFree.isOn || last == null || last.isUser) return@LaunchedEffect
+        when {
+            last.isPending -> handsFree.waiting()
+            last.isError -> handsFree.failed()
+            last.content.isNotBlank() -> handsFree.answered(last.content)
+        }
+    }
 
     LaunchedEffect(vm.error) {
         vm.error?.let {
@@ -104,6 +148,25 @@ fun GenfoxScreen(vm: GenfoxViewModel = viewModel()) {
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = {
+                            if (handsFree.isOn) {
+                                handsFree.stop()
+                            } else {
+                                val granted = ContextCompat.checkSelfPermission(
+                                    context, Manifest.permission.RECORD_AUDIO,
+                                ) == PackageManager.PERMISSION_GRANTED
+                                if (granted) handsFree.start()
+                                else askPermission.launch(Manifest.permission.RECORD_AUDIO)
+                            }
+                        },
+                    ) {
+                        Icon(
+                            if (handsFree.isOn) Icons.Filled.Hearing else Icons.Filled.HeadsetMic,
+                            contentDescription = if (handsFree.isOn) "Arrêter les mains libres"
+                            else "Mains libres",
+                        )
+                    }
                     IconButton(onClick = { vm.reset() }) {
                         Icon(Icons.Filled.Add, contentDescription = "Nouvelle conversation")
                     }
@@ -137,10 +200,13 @@ fun GenfoxScreen(vm: GenfoxViewModel = viewModel()) {
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        items(vm.messages, key = { it.hashCode() }) { Bubble(it) }
+                        items(vm.messages, key = { it.hashCode() }) { message ->
+                            Bubble(message, onSpeak = { handsFree.say(message.content) })
+                        }
                     }
                 }
             }
+            if (handsFree.isOn) HandsFreeBand(handsFree.state)
             Asker(asking = vm.asking, snackbar = snackbar, onAsk = vm::ask)
         }
     }
@@ -201,7 +267,7 @@ private fun EmptyState(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun Bubble(message: GenfoxMessage) {
+private fun Bubble(message: GenfoxMessage, onSpeak: () -> Unit) {
     val mine = message.isUser
     val background = when {
         mine -> BrandAccent
@@ -244,6 +310,18 @@ private fun Bubble(message: GenfoxMessage) {
                 SelectionContainer {
                     Text(message.content, color = foreground, fontSize = 15.sp)
                 }
+            }
+        }
+        // Replay: an answer read on a screen is sometimes easier heard, and the
+        // engine is already there for the hands-free loop.
+        if (!mine && !message.isPending && !message.isError) {
+            IconButton(onClick = onSpeak, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    Icons.Filled.VolumeUp,
+                    contentDescription = "Lire à voix haute",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
             }
         }
     }
@@ -315,6 +393,35 @@ private fun Asker(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun HandsFreeBand(state: HandsFreeState) {
+    val label = when (state) {
+        HandsFreeState.Listening -> "J'écoute — parlez, je m'arrête au silence"
+        HandsFreeState.Sending -> "Transcription…"
+        HandsFreeState.Waiting -> "GenFox cherche…"
+        HandsFreeState.Speaking -> "Réponse à voix haute…"
+        HandsFreeState.Off -> ""
+    }
+    if (label.isBlank()) return
+    Surface(color = BrandAccent) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Filled.Hearing,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(Modifier.width(10.dp))
+            Text(label, color = Color.White, fontSize = 13.sp)
         }
     }
 }
