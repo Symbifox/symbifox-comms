@@ -71,12 +71,24 @@ data class CallLogEntry(
     /** `incoming`, `outgoing` or `missed`. */
     val direction: String = "",
     val number: String = "",
+    /**
+     * Le nom du correspondant.
+     *
+     * ⚠️ Longtemps vide pour TOUS les appels : il vit sur le fil de discussion,
+     * pas sur l'appel, et le serveur ne le remontait pas. Le journal affichait
+     * donc une colonne de numéros bruts, et on croyait que l'appareil ne
+     * connaissait pas ses contacts.
+     */
     val name: String = "",
+    /** Fiche Odoo liée, 0 quand le numéro n'est rattaché à personne. */
+    @SerialName("partner_id") val partnerId: Int = 0,
     val date: String = "",
     val duration: Int = 0,
 ) {
     val isMissed: Boolean get() = direction == "missed"
     val isOutgoing: Boolean get() = direction == "outgoing"
+    /** Un numéro sans fiche : c'est là qu'« ajouter aux contacts » a du sens. */
+    val isKnown: Boolean get() = partnerId > 0 || name.isNotBlank()
 }
 
 @Serializable

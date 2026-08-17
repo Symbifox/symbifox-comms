@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Métadonnée exigée par RecognitionService. Aucun réglage à offrir : le
+     service ne reconnaît rien, la dictée passe par Whisper côté serveur. -->
+<recognition-service
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:settingsActivity=""/>

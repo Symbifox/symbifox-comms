@@ -123,14 +123,21 @@ class PhoneViewModel : ViewModel() {
         }
     }
 
+    /** Vrai pendant que le journal se recharge, pour le geste « tirer ». */
+    var refreshingCalls by mutableStateOf(false)
+        private set
+
     fun refresh() {
         viewModelScope.launch {
+            refreshingCalls = true
             try {
                 calls = Graph.phone.calls()
             } catch (e: Exception) {
                 // A missing log is not worth an error banner over a keypad that
                 // otherwise works; only say so if nothing at all can be reached.
                 if (calls.isEmpty()) error = "Journal d'appels indisponible."
+            } finally {
+                refreshingCalls = false
             }
         }
     }

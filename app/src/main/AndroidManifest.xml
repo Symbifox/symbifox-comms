@@ -108,6 +108,45 @@
             android:exported="false"
             android:foregroundServiceType="microphone"/>
 
+        <!-- GenFox comme assistant du système. Les trois pièces sont
+             indissociables : le service d'interaction déclare la capacité, le
+             service de session ouvre l'app au geste d'assistance, et le service
+             de reconnaissance n'existe que parce que la déclaration l'exige —
+             sans lui, l'app n'apparaît pas dans le sélecteur, en silence.
+             BIND_VOICE_INTERACTION garantit que seul le système peut s'y lier. -->
+        <service
+            android:name=".assist.AssistService"
+            android:exported="true"
+            android:permission="android.permission.BIND_VOICE_INTERACTION">
+            <meta-data
+                android:name="android.voice_interaction"
+                android:resource="@xml/assist_service"/>
+            <intent-filter>
+                <action android:name="android.service.voice.VoiceInteractionService"/>
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".assist.AssistSessionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_VOICE_INTERACTION">
+            <intent-filter>
+                <action android:name="android.service.voice.VoiceInteractionSessionService"/>
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".assist.AssistRecognitionService"
+            android:exported="true"
+            android:permission="android.permission.RECORD_AUDIO">
+            <intent-filter>
+                <action android:name="android.speech.RecognitionService"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.speech"
+                android:resource="@xml/assist_recognition"/>
+        </service>
+
     </application>
 
 </manifest>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Déclaration de l'assistant.
+
+  ⚠️ `recognitionService` est OBLIGATOIRE, même sans reconnaissance vocale
+  embarquée : sans cet attribut le service est ignoré en silence et l'app
+  n'apparaît jamais dans le sélecteur. On pointe le service de reconnaissance
+  du système plutôt que d'en écrire un vide.
+-->
+<voice-interaction-service
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:sessionService="com.bluefoxconsultant.sms.assist.AssistSessionService"
+    android:recognitionService="com.bluefoxconsultant.sms.assist.AssistRecognitionService"
+    android:supportsAssist="true"
+    android:supportsLaunchVoiceAssistFromKeyguard="false"/>

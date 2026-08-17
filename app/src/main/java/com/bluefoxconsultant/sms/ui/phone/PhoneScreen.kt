@@ -28,6 +28,19 @@ import androidx.compose.material.icons.filled.Backspace
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Person
+import com.bluefoxconsultant.sms.data.OdooLinks
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Dialpad
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import android.provider.ContactsContract
+import android.content.Intent
 import com.bluefoxconsultant.sms.sip.SipStatus
 import com.bluefoxconsultant.sms.sip.SipEngine
 import com.bluefoxconsultant.sms.sip.CallLeg
@@ -75,11 +88,12 @@ import com.bluefoxconsultant.sms.ui.theme.BrandAccent
  * The call itself still goes through the PBX — this handset never carries the
  * audio — so the confirmation is the same one the in-conversation button shows.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun PhoneScreen(vm: PhoneViewModel = viewModel()) {
     val snackbar = remember { SnackbarHostState() }
     var calling by remember { mutableStateOf(false) }
+    var menuFor by remember { mutableStateOf<CallLogEntry?>(null) }
     val sip by SipEngine.state.collectAsStateWithLifecycle()
     // Le micro n'est demandé qu'ici, au moment où le clavier s'ouvre : un poste
     // qui réclame le micro au lancement de l'app inquiète pour rien.
@@ -156,7 +170,13 @@ fun PhoneScreen(vm: PhoneViewModel = viewModel()) {
                     // matching contacts while typing, the log when idle.
                     vm.dialled.isNotEmpty() && vm.matches.isNotEmpty() ->
                         ContactList(vm.matches) { vm.set(it.number) }
-                    vm.dialled.isEmpty() -> CallLog(vm.calls) { vm.set(it) }
+                    vm.dialled.isEmpty() -> CallLog(
+                        calls = vm.calls,
+                        refreshing = vm.refreshingCalls,
+                        onRefresh = vm::refresh,
+                        onPick = { vm.set(it) },
+                        onLongPress = { menuFor = it },
+                    )
                     else -> Box(Modifier.fillMaxSize())
                 }
             }
@@ -215,6 +235,15 @@ fun PhoneScreen(vm: PhoneViewModel = viewModel()) {
                 }
             }
         }
+    }
+
+    menuFor?.let { entree ->
+        CallLogSheet(
+            entry = entree,
+            onDismiss = { menuFor = null },
+            onDial = { menuFor = null; vm.set(entree.number) },
+            onCall = { menuFor = null; vm.set(entree.number); calling = true },
+        )
     }
 
     if (calling) {
@@ -454,8 +483,15 @@ private fun ContactList(contacts: List<PhoneContact>, onPick: (PhoneContact) -> 
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
-private fun CallLog(calls: List<CallLogEntry>, onPick: (String) -> Unit) {
+private fun CallLog(
+    calls: List<CallLogEntry>,
+    refreshing: Boolean,
+    onRefresh: () -> Unit,
+    onPick: (String) -> Unit,
+    onLongPress: (CallLogEntry) -> Unit,
+) {
     if (calls.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
@@ -466,6 +502,13 @@ private fun CallLog(calls: List<CallLogEntry>, onPick: (String) -> Unit) {
         }
         return
     }
+    // Tirer pour rafraîchir : le journal est écrit par le PBX, pas par
+    // l'appareil, donc rien ne le pousse — il faut pouvoir le redemander.
+    PullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = onRefresh,
+        modifier = Modifier.fillMaxSize(),
+    ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(vertical = 6.dp),
@@ -477,7 +520,10 @@ private fun CallLog(calls: List<CallLogEntry>, onPick: (String) -> Unit) {
                     .fillMaxWidth()
                     // Fills the field rather than dialling: one tap should never
                     // place a call by itself.
-                    .clickable { onPick(call.number) }
+                    .combinedClickable(
+                        onClick = { onPick(call.number) },
+                        onLongClick = { onLongPress(call) },
+                    )
                     .padding(horizontal = 20.dp, vertical = 9.dp),
             ) {
                 Icon(
@@ -514,5 +560,92 @@ private fun CallLog(calls: List<CallLogEntry>, onPick: (String) -> Unit) {
             }
             Spacer(Modifier.height(1.dp))
         }
+    }
+    }
+}
+
+/**
+ * Menu contextuel d'une ligne du journal.
+ *
+ * Un appui long sur un appel doit proposer ce qu'on peut en faire, et
+ * « ajouter aux contacts » est la première chose qu'on cherche devant un
+ * numéro inconnu. La fiche Odoo n'est offerte que quand elle existe : un
+ * bouton qui mène à une page vide est pire que pas de bouton.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CallLogSheet(
+    entry: CallLogEntry,
+    onDismiss: () -> Unit,
+    onDial: () -> Unit,
+    onCall: () -> Unit,
+) {
+    val context = LocalContext.current
+    val presse = LocalClipboardManager.current
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.padding(bottom = 24.dp)) {
+            Text(
+                entry.name.ifBlank { entry.number },
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 17.sp,
+                modifier = Modifier.padding(horizontal = 24.dp),
+            )
+            if (entry.name.isNotBlank()) {
+                Text(
+                    entry.number,
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 2.dp),
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            SheetAction(Icons.Filled.Call, "Appeler") { onCall() }
+            SheetAction(Icons.Filled.Dialpad, "Mettre au clavier") { onDial() }
+            SheetAction(Icons.Filled.ContentCopy, "Copier le numéro") {
+                presse.setText(AnnotatedString(entry.number))
+                onDismiss()
+            }
+            if (entry.partnerId > 0) {
+                SheetAction(Icons.Filled.Person, "Ouvrir la fiche") {
+                    OdooLinks.openRecord(context, "res.partner", entry.partnerId)
+                    onDismiss()
+                }
+            } else {
+                SheetAction(Icons.Filled.PersonAdd, "Ajouter aux contacts") {
+                    // Contacts DU TÉLÉPHONE : c'est le geste attendu d'un
+                    // clavier. La fiche Odoo, elle, se crée depuis Odoo.
+                    val intent = Intent(ContactsContract.Intents.Insert.ACTION).apply {
+                        type = ContactsContract.RawContacts.CONTENT_TYPE
+                        putExtra(ContactsContract.Intents.Insert.PHONE, entry.number)
+                        if (entry.name.isNotBlank()) {
+                            putExtra(ContactsContract.Intents.Insert.NAME, entry.name)
+                        }
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    runCatching { context.startActivity(intent) }
+                    onDismiss()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SheetAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 13.dp),
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp),
+             tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.width(18.dp))
+        Text(label)
     }
 }

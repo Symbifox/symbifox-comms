@@ -126,6 +126,10 @@ class MainActivity : ComponentActivity() {
         // The assistant finished a turn while the app was away.
         val genfoxSession = intent.getIntExtra(Notifier.EXTRA_GENFOX_SESSION, -1)
         if (genfoxSession > 0) pendingGenfox.value = genfoxSession
+        // Geste d'assistance du système : on ouvre GenFox sur sa dernière
+        // conversation. 0 vaut « l'onglet, sans conversation précise » — l'écran
+        // choisit alors la plus récente, qui est celle qu'on veut poursuivre.
+        if (intent.getBooleanExtra("bf_assist", false)) pendingGenfox.value = 0
     }
 
     private fun requestNotificationPermission() {

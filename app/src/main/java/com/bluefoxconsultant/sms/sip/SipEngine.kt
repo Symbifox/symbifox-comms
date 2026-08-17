@@ -5,6 +5,7 @@ import android.content.Context
 import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -59,6 +60,8 @@ object SipEngine {
     private var pageReady = false
     /** Config en attente que la page finisse de charger. */
     private var pending: SipConfig? = null
+    /** Verrou d'écran de proximité, tenu le temps de l'appel. */
+    private var proximite: PowerManager.WakeLock? = null
     /** Numéro à composer dès que l'enregistrement aboutit. */
     private var queuedNumber: String? = null
 
@@ -92,6 +95,7 @@ object SipEngine {
         main.post {
             web?.evaluateJavascript("BFPhone && BFPhone.stop()", null)
             releaseAudio()
+            releaseProximity()
             app?.let { CallService.stop(it) }
             _state.value = SipState()
         }
@@ -151,7 +155,39 @@ object SipEngine {
         am.mode = AudioManager.MODE_IN_COMMUNICATION
         am.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL,
             AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+        // Écouteur par défaut, jamais le haut-parleur : un appel d'affaires
+        // qui démarre à voix haute se remarque dans une pièce partagée. Le
+        // bouton du haut-parleur reste à un tap pour qui le veut.
         am.isSpeakerphoneOn = false
+    }
+
+    /**
+     * Éteint l'écran quand l'appareil est porté à l'oreille.
+     *
+     * `PROXIMITY_SCREEN_OFF_WAKE_LOCK` fait exactement ce que fait l'appli
+     * Téléphone du système : le capteur de proximité éteint la dalle sans
+     * endormir l'appareil, ce qui évite surtout les appuis de joue — un
+     * raccrochage accidentel en pleine conversation.
+     *
+     * ⚠️ Toutes les dalles ne l'exposent pas ; `isWakeLockLevelSupported` est
+     * donc une vraie question, pas une formalité. Sur un appareil sans capteur
+     * on ne fait rien plutôt que de lever une exception.
+     */
+    private fun takeProximity() {
+        if (proximite != null) return
+        val pm = app?.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
+        if (!pm.isWakeLockLevelSupported(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK)) return
+        proximite = pm.newWakeLock(
+            PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK,
+            "SymbifoxComms:appel",
+        ).also { runCatching { it.acquire(2 * 60 * 60 * 1000L) } }
+    }
+
+    private fun releaseProximity() {
+        // ⚠️ Relâcher un verrou non tenu lève IllegalStateException, et
+        // l'écran resterait noir après l'appel — le pire des deux échecs.
+        proximite?.let { if (it.isHeld) runCatching { it.release() } }
+        proximite = null
     }
 
     @Suppress("DEPRECATION")
@@ -256,12 +292,21 @@ object SipEngine {
                     ),
                 )
             }
-            "established" -> _state.value = _state.value.copy(
-                call = _state.value.call?.copy(established = true, peer = o.optString("peer")
-                    .ifBlank { _state.value.call?.peer.orEmpty() }),
-            )
+            "established" -> {
+                // Seulement une fois décroché : éteindre l'écran pendant que ça
+                // sonne empêcherait de raccrocher avant la réponse.
+                takeProximity()
+                _state.value = _state.value.copy(
+                    call = _state.value.call?.copy(
+                        established = true,
+                        peer = o.optString("peer")
+                            .ifBlank { _state.value.call?.peer.orEmpty() },
+                    ),
+                )
+            }
             "ended" -> {
                 releaseAudio()
+                releaseProximity()
                 app?.let { CallService.stop(it) }
                 _state.value = _state.value.copy(call = null, muted = false, speaker = false)
             }
