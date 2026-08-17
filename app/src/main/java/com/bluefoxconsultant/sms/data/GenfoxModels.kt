@@ -41,15 +41,38 @@ data class GenfoxTool(
     val short: String get() = name.substringAfterLast("__").ifBlank { name }
 }
 
+/**
+ * Ce qu'un tour a consommé.
+ *
+ * ⚠️ [totalTokens] additionne le contexte RELU, qui n'est pas du travail neuf :
+ * c'est le même contexte relu à chaque pas interne du tour, facturé au dixième
+ * du prix. Il représentait ~93 % du volume mensuel, et c'est ce qui faisait
+ * afficher « 50 k jetons » pour un bonjour — vrai, et incompréhensible.
+ * L'écran montre donc [displayTokens], la même grandeur que le Cockpit Odoo et
+ * que le panneau web. Trois surfaces, un seul chiffre.
+ */
 @Serializable
 data class GenfoxUsage(
     @SerialName("input_tokens") val inputTokens: Int = 0,
     @SerialName("output_tokens") val outputTokens: Int = 0,
+    @SerialName("cache_read_tokens") val cacheReadTokens: Int = 0,
+    @SerialName("cache_write_tokens") val cacheWriteTokens: Int = 0,
+    @SerialName("net_tokens") val netTokens: Int = 0,
     @SerialName("total_tokens") val totalTokens: Int = 0,
     @SerialName("cost_usd") val costUsd: Double = 0.0,
     @SerialName("duration_ms") val durationMs: Int = 0,
 ) {
     val hasAny: Boolean get() = totalTokens > 0 || outputTokens > 0
+
+    /**
+     * Les jetons à afficher : neufs, sans le contexte relu.
+     *
+     * Recalculé à défaut, pour qu'un serveur plus ancien — qui ne sert pas
+     * `net_tokens` — donne quand même le bon chiffre au lieu de zéro.
+     */
+    val displayTokens: Int
+        get() = if (netTokens > 0) netTokens
+        else inputTokens + cacheWriteTokens + outputTokens
 }
 
 @Serializable
@@ -62,12 +85,17 @@ data class GenfoxMessage(
     val tools: List<GenfoxTool> = emptyList(),
     @SerialName("input_tokens") val inputTokens: Int = 0,
     @SerialName("output_tokens") val outputTokens: Int = 0,
+    @SerialName("cache_read_tokens") val cacheReadTokens: Int = 0,
+    @SerialName("cache_write_tokens") val cacheWriteTokens: Int = 0,
+    @SerialName("net_tokens") val netTokens: Int = 0,
     @SerialName("total_tokens") val totalTokens: Int = 0,
     @SerialName("cost_usd") val costUsd: Double = 0.0,
     @SerialName("duration_ms") val durationMs: Int = 0,
 ) {
     val usage: GenfoxUsage
-        get() = GenfoxUsage(inputTokens, outputTokens, totalTokens, costUsd, durationMs)
+        get() = GenfoxUsage(inputTokens, outputTokens, cacheReadTokens,
+                            cacheWriteTokens, netTokens, totalTokens,
+                            costUsd, durationMs)
 
     val isUser: Boolean get() = role == "user"
     val isPending: Boolean get() = state == "pending"

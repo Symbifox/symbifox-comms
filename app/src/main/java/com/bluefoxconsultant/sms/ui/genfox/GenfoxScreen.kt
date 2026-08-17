@@ -348,10 +348,17 @@ private fun Bubble(message: GenfoxMessage, onSpeak: () -> Unit) {
     }
 }
 
-/** "12,3 k jetons · 0,04 $ · 4,2 s" — what the turn actually cost. */
+/**
+ * « 12,3 k jetons · 0,040 $ · 4,2 s » — ce que le tour a réellement consommé.
+ *
+ * ⚠️ Les jetons affichés sont les NEUFS, pas le total : le total additionne le
+ * contexte relu, qui n'est pas du travail neuf et pesait ~93 % du volume. Même
+ * grandeur que le Cockpit Odoo et que le panneau web — si ce chiffre change
+ * ici, il doit changer aux trois endroits, sinon les écrans se contredisent.
+ */
 private fun usageLabel(message: GenfoxMessage): String {
     val usage = message.usage
-    val tokens = if (usage.totalTokens > 0) usage.totalTokens else usage.outputTokens
+    val tokens = if (usage.displayTokens > 0) usage.displayTokens else usage.outputTokens
     val parts = mutableListOf<String>()
     parts += if (tokens >= 1000) "%.1f k jetons".format(tokens / 1000.0)
     else "$tokens jetons"
