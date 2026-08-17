@@ -2,6 +2,7 @@ package com.bluefoxconsultant.sms.ui.mail
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,9 +12,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -21,6 +24,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -28,6 +33,7 @@ import androidx.compose.ui.unit.sp
 import com.bluefoxconsultant.sms.data.MailMessage
 import com.bluefoxconsultant.sms.ui.relativeTime
 import com.bluefoxconsultant.sms.ui.threads.Avatar
+import com.bluefoxconsultant.sms.data.OdooLinks
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -36,17 +42,39 @@ fun MailRow(
     message: MailMessage,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    selected: Boolean = false,
 ) {
+    val context = LocalContext.current
     val unread = message.unreadCount > 0 || message.isUnread
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .background(
+                if (selected) BrandAccent.copy(alpha = 0.14f) else Color.Transparent,
+            )
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        Avatar(message.correspondent)
+        // La pastille remplace l'avatar plutôt que de s'ajouter à côté : la
+        // ligne garde exactement la même largeur, donc rien ne saute au
+        // moment où la sélection commence.
+        if (selected) {
+            Box(
+                modifier = Modifier.size(46.dp).background(BrandAccent, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Filled.Check,
+                    contentDescription = "Sélectionné",
+                    tint = Color.White,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        } else {
+            Avatar(message.correspondent)
+        }
         Spacer(Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -119,17 +147,22 @@ fun MailRow(
             // app over a plain IMAP client, so it belongs on the row.
             message.record?.let { record ->
                 Spacer(Modifier.size(4.dp))
-                RecordChip(record.name)
+                // La pastille mène AU dossier : c'est la première chose qu'on
+                // essaie en la voyant, et elle ne faisait rien.
+                RecordChip(record.name) {
+                    OdooLinks.openRecord(context, record.model, record.id)
+                }
             }
         }
     }
 }
 
 @Composable
-private fun RecordChip(label: String) {
+private fun RecordChip(label: String, onOpen: () -> Unit) {
     Box(
         modifier = Modifier
             .background(BrandAccent.copy(alpha = 0.12f), RoundedCornerShape(4.dp))
+            .clickable(onClick = onOpen)
             .padding(horizontal = 6.dp, vertical = 2.dp),
     ) {
         Text(

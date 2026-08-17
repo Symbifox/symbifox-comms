@@ -16,8 +16,12 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.DropdownMenu
@@ -48,6 +52,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -74,10 +79,19 @@ fun ThreadsScreen(
     val snackbar = remember { SnackbarHostState() }
     val swipe by Graph.uiPrefs.configFlow.collectAsState()
 
+    LaunchedEffect(vm.error) {
+        val message = vm.error ?: return@LaunchedEffect
+        snackbar.showSnackbar(message)
+        vm.dismissError()
+    }
+
+    // Le retour arrière sort de la sélection avant de quitter l'écran.
+    BackHandler(enabled = vm.selectionMode) { vm.clearSelection() }
+
     LaunchedEffect(vm.undoable) {
         val undo = vm.undoable ?: return@LaunchedEffect
         val result = snackbar.showSnackbar(
-            message = "Archivé",
+            message = vm.undoLabel,
             actionLabel = "Annuler",
             duration = SnackbarDuration.Short,
         )
@@ -87,7 +101,16 @@ fun ThreadsScreen(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
-            if (vm.searchActive) {
+            if (vm.selectionMode) {
+                ThreadSelectionBar(
+                    count = vm.selection.size,
+                    pinned = vm.allSelectedPinned,
+                    onClose = vm::clearSelection,
+                    onSelectAll = vm::selectAll,
+                    onPin = { vm.pinSelected(!vm.allSelectedPinned) },
+                    onArchive = vm::archiveSelected,
+                )
+            } else if (vm.searchActive) {
                 SearchTopBar(
                     term = vm.searchTerm,
                     onChange = vm::onSearchChange,
@@ -154,11 +177,25 @@ fun ThreadsScreen(
                 } else {
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
                         items(vm.threads, key = { it.id }) { thread ->
-                            SwipeToArchive(startAction = swipe.smsStart, endAction = swipe.smsEnd, onArchive = { vm.archive(thread.id) }) {
+                            SwipeToArchive(
+                                // Pendant une sélection, le glissement est
+                                // refusé : viser une case et emporter la ligne
+                                // d'à côté serait le pire des deux gestes.
+                                startAction = if (vm.selectionMode) SwipeAction.NONE
+                                else swipe.smsStart,
+                                endAction = if (vm.selectionMode) SwipeAction.NONE
+                                else swipe.smsEnd,
+                                onArchive = { vm.archive(thread.id) },
+                            ) {
                                 ThreadRow(
                                     thread = thread,
                                     showLineLabel = vm.lines.size > 1,
-                                    onClick = { onOpenThread(thread.id) },
+                                    onClick = {
+                                        if (vm.selectionMode) vm.toggleSelect(thread.id)
+                                        else onOpenThread(thread.id)
+                                    },
+                                    onLongClick = { vm.toggleSelect(thread.id) },
+                                    selected = thread.id in vm.selection,
                                     menuActions = listOf(
                                         ThreadAction(
                                             if (thread.isPinned) "Désépingler" else "Épingler",
@@ -177,6 +214,52 @@ fun ThreadsScreen(
             }
         }
     }
+}
+
+/**
+ * Barre contextuelle de sélection.
+ *
+ * Elle REMPLACE la barre de titre : c'est ce qui rend évident que les taps ne
+ * veulent plus dire « ouvrir ». Le menu par ligne reste accessible d'un appui
+ * long hors sélection.
+ */
+@Composable
+private fun ThreadSelectionBar(
+    count: Int,
+    pinned: Boolean,
+    onClose: () -> Unit,
+    onSelectAll: () -> Unit,
+    onPin: () -> Unit,
+    onArchive: () -> Unit,
+) {
+    TopAppBar(
+        title = { Text("$count", fontWeight = FontWeight.SemiBold) },
+        navigationIcon = {
+            IconButton(onClick = onClose) {
+                Icon(Icons.Filled.Close, contentDescription = "Quitter la sélection")
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = BrandAccent,
+            titleContentColor = Color.White,
+            navigationIconContentColor = Color.White,
+            actionIconContentColor = Color.White,
+        ),
+        actions = {
+            IconButton(onClick = onSelectAll) {
+                Icon(Icons.Filled.SelectAll, contentDescription = "Tout sélectionner")
+            }
+            IconButton(onClick = onPin) {
+                Icon(
+                    Icons.Filled.PushPin,
+                    contentDescription = if (pinned) "Désépingler" else "Épingler",
+                )
+            }
+            IconButton(onClick = onArchive) {
+                Icon(Icons.Filled.Archive, contentDescription = "Archiver")
+            }
+        },
+    )
 }
 
 @Composable
@@ -214,17 +297,25 @@ private fun SwipeToArchive(
     onArchive: () -> Unit,
     content: @Composable () -> Unit,
 ) {
+    // ⚠️ `rememberSwipeToDismissBoxState` GARDE la première lambda qu'on lui
+    // donne : les paramètres capturés à la composition initiale y restent figés
+    // pour la vie de la ligne. Sans `rememberUpdatedState`, neutraliser le
+    // glissement pendant une sélection n'aurait aucun effet — la ligne partirait
+    // quand même, avec l'action d'avant.
+    val start by rememberUpdatedState(startAction)
+    val end by rememberUpdatedState(endAction)
+    val archive by rememberUpdatedState(onArchive)
     val state = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
             val action = when (value) {
-                SwipeToDismissBoxValue.StartToEnd -> startAction
-                SwipeToDismissBoxValue.EndToStart -> endAction
+                SwipeToDismissBoxValue.StartToEnd -> start
+                SwipeToDismissBoxValue.EndToStart -> end
                 else -> SwipeAction.NONE
             }
             if (action == SwipeAction.NONE) {
                 false
             } else {
-                onArchive()
+                archive()
                 true
             }
         },

@@ -125,8 +125,24 @@ private fun wrap(body: String, textColor: Color, background: Color): String {
             font-size: 15px; line-height: 1.45;
             word-wrap: break-word; overflow-wrap: break-word;
           }
-          img { max-width: 100% !important; height: auto !important; }
-          table { max-width: 100% !important; }
+          /* Un courriel d'entreprise arrive avec des logos dimensionnés pour
+             un écran de bureau : attribut width=600, style height=200px, dans
+             un tableau à largeur fixe. max-width seul ne suffit pas — il borne
+             la LARGEUR relative au conteneur, et un conteneur trop large laisse
+             passer un logo démesuré. On borne donc aussi la hauteur, et on
+             ramène tout conteneur à la largeur de l'écran. */
+          img {
+            max-width: 100% !important;
+            width: auto !important;
+            height: auto !important;
+            max-height: 45vh !important;
+            object-fit: contain;
+          }
+          /* Dans un tableau d'en-tête, le logo doit rester à l'échelle de la
+             ligne qui le porte, pas la faire éclater. */
+          td img, th img { max-height: 90px !important; }
+          table, td, th, div, p, figure { max-width: 100% !important; }
+          table { table-layout: auto !important; }
           pre { white-space: pre-wrap; word-wrap: break-word; }
           blockquote {
             border-left: 3px solid rgba(128,128,128,0.4);

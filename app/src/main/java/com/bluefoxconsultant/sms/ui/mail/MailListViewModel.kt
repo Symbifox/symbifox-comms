@@ -18,6 +18,9 @@ import kotlinx.coroutines.launch
 
 private const val PAGE = 25
 
+/** Durée de vie d'une pierre tombale — le temps que le serveur rattrape. */
+private const val TOMBSTONE_MS = 60_000L
+
 class MailListViewModel : ViewModel() {
 
     var threads by mutableStateOf<List<MailMessage>>(emptyList())
@@ -69,10 +72,56 @@ class MailListViewModel : ViewModel() {
 
     private var searchJob: Job? = null
 
+    /**
+     * Ce que l'utilisateur vient de retirer de CETTE liste, et que le serveur
+     * peut encore rendre pendant quelques instants.
+     *
+     * ⚠️ Retirer la ligne à l'écran ne suffit pas : le `/handle` répond bien,
+     * mais le déplacement IMAP se fait après, et la moindre relecture entre les
+     * deux — retour à l'app, tirer pour rafraîchir, notification — ramenait la
+     * ligne, qui repartait ensuite toute seule. Une pierre tombale, à durée
+     * limitée et en mémoire seulement, tient la promesse du geste sans jamais
+     * masquer durablement un courriel que le serveur, lui, garde.
+     *
+     * Clé par FILTRE : archiver depuis la réception doit bel et bien faire
+     * apparaître le courriel dans « Archivés ».
+     */
+    private val tombstones = mutableMapOf<String, Long>()
+
     init {
         queued = Graph.outbox.size
         loadConfig()
         refresh()
+    }
+
+    /** Masque la ligne dans le filtre courant, le temps que le serveur suive. */
+    private fun hide(message: MailMessage) {
+        tombstones["${filter.name}:${message.threadKey}"] =
+            System.currentTimeMillis() + TOMBSTONE_MS
+    }
+
+    /**
+     * Rend la ligne visible de nouveau, dans TOUS les filtres.
+     *
+     * Indispensable à « Annuler » : la restauration ne réinsère pas la ligne
+     * elle-même, elle compte sur la relecture suivante. Une pierre tombale
+     * oubliée rendrait donc l'annulation sans effet visible.
+     */
+    private fun unhide(message: MailMessage) {
+        tombstones.keys.removeAll { it.endsWith(":${message.threadKey}") }
+    }
+
+    /** Ce que le serveur rend, moins ce que l'utilisateur a déjà retiré. */
+    private fun visible(rows: List<MailMessage>): List<MailMessage> {
+        val now = System.currentTimeMillis()
+        tombstones.entries.removeAll { it.value <= now }
+        // Même si la file a échoué, la liste ne doit pas contredire le geste :
+        // tout ce qui reste en attente demeure caché.
+        val queuedIds = Graph.outbox.peek().flatMap { it.emailIds }.toSet()
+        val prefix = "${filter.name}:"
+        return rows.filterNot {
+            it.id in queuedIds || tombstones.containsKey(prefix + it.threadKey)
+        }
     }
 
     private fun loadConfig() {
@@ -113,12 +162,7 @@ class MailListViewModel : ViewModel() {
                     limit = PAGE,
                     grouped = Graph.uiPrefs.threadView,
                 )
-                // Even if the flush failed, the list must not contradict what
-                // the user just did: anything still queued stays hidden.
-                val stillQueued = Graph.outbox.peek()
-                    .flatMap { it.emailIds }
-                    .toSet()
-                threads = resp.threads.filterNot { it.id in stillQueued }
+                threads = visible(resp.threads)
                 hasMore = resp.hasMore
                 offline = false
                 // Only the plain first page is worth caching; a search result
@@ -129,7 +173,7 @@ class MailListViewModel : ViewModel() {
                     val cached = if (searchTerm.isBlank())
                         Graph.mailCache.loadThreads(filter) else null
                     if (cached != null) {
-                        threads = cached.threads
+                        threads = visible(cached.threads)
                         // No paging offline: the next page isn't on this device.
                         hasMore = false
                         offline = true
@@ -173,7 +217,7 @@ class MailListViewModel : ViewModel() {
                 // two requests shifts every later row down by one, which would
                 // otherwise duplicate the boundary thread.
                 val known = threads.mapTo(HashSet()) { it.threadKey }
-                threads = threads + resp.threads.filterNot { it.threadKey in known }
+                threads = threads + visible(resp.threads).filterNot { it.threadKey in known }
                 hasMore = resp.hasMore
             } catch (e: Exception) {
                 hasMore = false
@@ -227,6 +271,7 @@ class MailListViewModel : ViewModel() {
     }
 
     fun archive(message: MailMessage) {
+        hide(message)
         threads = threads.filterNot { it.threadKey == message.threadKey }
         offerUndo("Archivé") { restore(message) }
         viewModelScope.launch {
@@ -235,6 +280,8 @@ class MailListViewModel : ViewModel() {
             } catch (e: Exception) {
                 if (e.isOffline()) queueHandle(message, handled = true)
                 else {
+                    // Refusé : la ligne doit revenir, donc la pierre tombale part.
+                    unhide(message)
                     error = "Archivage impossible."
                     refresh()
                 }
@@ -263,6 +310,7 @@ class MailListViewModel : ViewModel() {
     }
 
     fun snooze(message: MailMessage, untilMs: Long) {
+        hide(message)
         threads = threads.filterNot { it.threadKey == message.threadKey }
         offerUndo("Reporté") { restore(message) }
         viewModelScope.launch {
@@ -283,6 +331,7 @@ class MailListViewModel : ViewModel() {
                     offline = true
                     notice = "Report enregistré, envoi au retour du réseau."
                 } else {
+                    unhide(message)
                     error = "Report impossible."
                     refresh()
                 }
@@ -292,6 +341,14 @@ class MailListViewModel : ViewModel() {
 
     fun restore(message: MailMessage) {
         clearUndo()
+        // ⚠️ Ne masquer que si la ligne est ENCORE là. Restaurer depuis
+        // « Traités » la retire de cette liste ; mais le même appel sert
+        // d'annulation juste après un archivage, et la ligne a alors déjà
+        // quitté la réception — la remasquer rendrait « Annuler » sans effet
+        // visible pendant une minute.
+        val present = threads.any { it.threadKey == message.threadKey }
+        unhide(message)
+        if (present) hide(message)
         threads = threads.filterNot { it.threadKey == message.threadKey }
         viewModelScope.launch {
             try {
@@ -300,6 +357,7 @@ class MailListViewModel : ViewModel() {
             } catch (e: Exception) {
                 if (e.isOffline()) queueHandle(message, handled = false)
                 else {
+                    unhide(message)
                     error = "Action impossible."
                     refresh()
                 }
@@ -358,5 +416,182 @@ class MailListViewModel : ViewModel() {
     fun dismissNotice() {
         notice = null
         error = null
+    }
+
+    // ── Sélection multiple ────────────────────────────────────────────
+    /**
+     * Les fils cochés, par clé de fil.
+     *
+     * La sélection EST le mode : un ensemble vide veut dire liste normale.
+     * Un drapeau séparé finirait par mentir sur le compte le jour où une
+     * ligne disparaît sous la sélection (archivage venu d'ailleurs, filtre
+     * changé), alors que l'intersection avec la liste, elle, reste vraie.
+     */
+    var selection by mutableStateOf<Set<String>>(emptySet())
+        private set
+
+    val selectionMode: Boolean get() = selection.isNotEmpty()
+
+    /** Les messages cochés ENCORE présents dans la liste, dans l'ordre affiché. */
+    val selectedMessages: List<MailMessage>
+        get() = threads.filter { it.threadKey in selection }
+
+    fun toggleSelect(message: MailMessage) {
+        selection = if (message.threadKey in selection) selection - message.threadKey
+        else selection + message.threadKey
+    }
+
+    fun clearSelection() {
+        selection = emptySet()
+    }
+
+    fun selectAll() {
+        selection = threads.mapTo(LinkedHashSet()) { it.threadKey }
+    }
+
+    /**
+     * Applique une action à toute la sélection en UN aller-retour : les points
+     * d'entrée du serveur (`/handle`, `/snooze`, `/mark_read`) prennent déjà
+     * une liste d'identifiants. Boucler côté téléphone multiplierait les
+     * requêtes et laisserait la liste dans un état à moitié appliqué si l'une
+     * d'elles échouait.
+     */
+    private fun applyToSelection(
+        targets: List<MailMessage>,
+        removeRows: Boolean,
+        errorText: String,
+        pending: PendingAction,
+        call: suspend (List<Int>) -> MailCounts,
+    ) {
+        if (removeRows) {
+            targets.forEach { hide(it) }
+            val keys = targets.mapTo(HashSet()) { it.threadKey }
+            threads = threads.filterNot { it.threadKey in keys }
+        }
+        viewModelScope.launch {
+            try {
+                counts = call(targets.map { it.id })
+            } catch (e: Exception) {
+                if (e.isOffline()) {
+                    Graph.outbox.enqueue(pending)
+                    queued = Graph.outbox.size
+                    offline = true
+                    notice = "Action enregistrée, envoi au retour du réseau."
+                } else {
+                    targets.forEach { unhide(it) }
+                    error = errorText
+                    refresh()
+                }
+            }
+        }
+    }
+
+    private fun plural(n: Int, one: String, many: String) =
+        if (n == 1) one else "$n $many"
+
+    fun archiveSelected() {
+        val targets = selectedMessages
+        if (targets.isEmpty()) return
+        clearSelection()
+        offerUndo(plural(targets.size, "Archivé", "archivés")) { restoreMany(targets) }
+        applyToSelection(
+            targets = targets,
+            removeRows = true,
+            errorText = "Archivage impossible.",
+            pending = PendingAction(
+                token = PendingAction.newToken(),
+                kind = PendingAction.KIND_HANDLE,
+                createdMs = System.currentTimeMillis(),
+                emailIds = targets.map { it.id },
+                handled = true,
+            ),
+        ) { ids -> Graph.mail.setHandled(ids, handled = true) }
+    }
+
+    fun restoreSelected() {
+        val targets = selectedMessages
+        if (targets.isEmpty()) return
+        clearSelection()
+        restoreMany(targets)
+    }
+
+    private fun restoreMany(targets: List<MailMessage>) {
+        clearUndo()
+        // Même règle que [restore] : ne masquer que ce qui est encore affiché.
+        val present = threads.mapTo(HashSet()) { it.threadKey }
+        targets.forEach {
+            unhide(it)
+            if (it.threadKey in present) hide(it)
+        }
+        val keys = targets.mapTo(HashSet()) { it.threadKey }
+        threads = threads.filterNot { it.threadKey in keys }
+        viewModelScope.launch {
+            try {
+                counts = Graph.mail.setHandled(targets.map { it.id }, handled = false)
+                notice = plural(targets.size, "Remis en boîte de réception.",
+                    "courriels remis en boîte de réception.")
+            } catch (e: Exception) {
+                if (e.isOffline()) {
+                    Graph.outbox.enqueue(
+                        PendingAction(
+                            token = PendingAction.newToken(),
+                            kind = PendingAction.KIND_HANDLE,
+                            createdMs = System.currentTimeMillis(),
+                            emailIds = targets.map { it.id },
+                            handled = false,
+                        ),
+                    )
+                    queued = Graph.outbox.size
+                    offline = true
+                    notice = "Restauration enregistrée, envoi au retour du réseau."
+                } else {
+                    targets.forEach { unhide(it) }
+                    error = "Action impossible."
+                    refresh()
+                }
+            }
+        }
+    }
+
+    fun markReadSelected() {
+        val targets = selectedMessages
+        if (targets.isEmpty()) return
+        clearSelection()
+        // La ligne RESTE : marquer lu ne la sort d'aucune liste sauf « Non
+        // lus », que le rafraîchissement suivant réglera de lui-même.
+        val keys = targets.mapTo(HashSet()) { it.threadKey }
+        threads = threads.map {
+            if (it.threadKey in keys) it.copy(status = "read", unreadCount = 0) else it
+        }
+        applyToSelection(
+            targets = targets,
+            removeRows = false,
+            errorText = "Action impossible.",
+            pending = PendingAction(
+                token = PendingAction.newToken(),
+                kind = PendingAction.KIND_MARK_READ,
+                createdMs = System.currentTimeMillis(),
+                emailIds = targets.map { it.id },
+            ),
+        ) { ids -> Graph.mail.markRead(ids) }
+    }
+
+    fun snoozeSelected(untilMs: Long) {
+        val targets = selectedMessages
+        if (targets.isEmpty()) return
+        clearSelection()
+        offerUndo(plural(targets.size, "Reporté", "reportés")) { restoreMany(targets) }
+        applyToSelection(
+            targets = targets,
+            removeRows = true,
+            errorText = "Report impossible.",
+            pending = PendingAction(
+                token = PendingAction.newToken(),
+                kind = PendingAction.KIND_SNOOZE,
+                createdMs = System.currentTimeMillis(),
+                emailIds = targets.map { it.id },
+                untilMs = untilMs,
+            ),
+        ) { ids -> Graph.mail.snooze(ids, untilMs) }
     }
 }

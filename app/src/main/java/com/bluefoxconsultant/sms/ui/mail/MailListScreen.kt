@@ -18,8 +18,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.foundation.background
+import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.MarkEmailRead
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Close
@@ -28,6 +31,7 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Snooze
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -61,6 +65,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.Alignment
@@ -144,10 +149,35 @@ fun MailListScreen(
         if (result == SnackbarResult.ActionPerformed) undo() else vm.clearUndo()
     }
 
+    // Le retour arrière sort de la sélection avant de quitter l'écran —
+    // sinon un geste réflexe ferme l'app avec vingt courriels cochés.
+    BackHandler(enabled = vm.selectionMode) { vm.clearSelection() }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
-            if (vm.searchActive) {
+            if (vm.selectionMode) {
+                SelectionBar(
+                    count = vm.selection.size,
+                    // « Traités » et « Envoyés » ne s'archivent pas : c'est
+                    // déjà fait. La barre propose la remise en réception.
+                    restoring = vm.filter == MailFilter.HANDLED,
+                    snoozePreset = vm.config.snoozePresets.firstOrNull { it.key == "tomorrow" },
+                    onClose = vm::clearSelection,
+                    onSelectAll = vm::selectAll,
+                    onArchive = vm::archiveSelected,
+                    onRestore = vm::restoreSelected,
+                    onMarkRead = vm::markReadSelected,
+                    onSnooze = { vm.snoozeSelected(it) },
+                    // Une seule ligne cochée : tout le reste (créer une tâche,
+                    // router, autres reports) vit déjà dans la feuille d'actions.
+                    onMore = if (vm.selection.size == 1) {
+                        { vm.selectedMessages.firstOrNull()?.let { sheetFor = it } }
+                    } else {
+                        null
+                    },
+                )
+            } else if (vm.searchActive) {
                 MailSearchBar(
                     term = vm.searchTerm,
                     onChange = vm::onSearchChange,
@@ -241,8 +271,13 @@ fun MailListScreen(
                                 // Already handled: swiping should put it back,
                                 // not archive something that already is.
                                 restore = thread.isHandled,
-                                startAction = swipe.mailStart,
-                                endAction = swipe.mailEnd,
+                                // Pendant une sélection, le glissement est
+                                // refusé : viser une case et emporter la ligne
+                                // d'à côté serait le pire des deux gestes.
+                                startAction = if (vm.selectionMode) SwipeAction.NONE
+                                else swipe.mailStart,
+                                endAction = if (vm.selectionMode) SwipeAction.NONE
+                                else swipe.mailEnd,
                                 onAction = { action ->
                                     when {
                                         thread.isHandled -> vm.restore(thread)
@@ -258,8 +293,15 @@ fun MailListScreen(
                             ) {
                                 MailRow(
                                     message = thread,
-                                    onClick = { onOpenThread(thread.threadKey) },
-                                    onLongClick = { sheetFor = thread },
+                                    onClick = {
+                                        if (vm.selectionMode) vm.toggleSelect(thread)
+                                        else onOpenThread(thread.threadKey)
+                                    },
+                                    // Appui long : on entre en sélection, comme
+                                    // partout ailleurs sur Android. La feuille
+                                    // d'actions reste à un tap, sous « ⋮ ».
+                                    onLongClick = { vm.toggleSelect(thread) },
+                                    selected = thread.threadKey in vm.selection,
                                 )
                             }
                             HorizontalDivider(
@@ -299,6 +341,66 @@ fun MailListScreen(
             },
         )
     }
+}
+
+/**
+ * Barre contextuelle de sélection.
+ *
+ * Elle REMPLACE la barre de titre au lieu de s'y ajouter : c'est ce qui rend
+ * évident que les taps ne veulent plus dire « ouvrir », et le retour arrière
+ * la ferme comme n'importe quel mode.
+ */
+@Composable
+private fun SelectionBar(
+    count: Int,
+    restoring: Boolean,
+    snoozePreset: com.bluefoxconsultant.sms.data.SnoozePreset?,
+    onClose: () -> Unit,
+    onSelectAll: () -> Unit,
+    onArchive: () -> Unit,
+    onRestore: () -> Unit,
+    onMarkRead: () -> Unit,
+    onSnooze: (Long) -> Unit,
+    onMore: (() -> Unit)?,
+) {
+    TopAppBar(
+        title = { Text("$count", fontWeight = FontWeight.SemiBold) },
+        navigationIcon = {
+            IconButton(onClick = onClose) {
+                Icon(Icons.Filled.Close, contentDescription = "Quitter la sélection")
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = BrandAccent,
+            titleContentColor = Color.White,
+            navigationIconContentColor = Color.White,
+            actionIconContentColor = Color.White,
+        ),
+        actions = {
+            IconButton(onClick = onSelectAll) {
+                Icon(Icons.Filled.SelectAll, contentDescription = "Tout sélectionner")
+            }
+            IconButton(onClick = onMarkRead) {
+                Icon(Icons.Filled.MarkEmailRead, contentDescription = "Marquer lu")
+            }
+            if (snoozePreset != null && !restoring) {
+                IconButton(onClick = { onSnooze(snoozePreset.untilMs) }) {
+                    Icon(Icons.Filled.Snooze, contentDescription = "Reporter à demain")
+                }
+            }
+            IconButton(onClick = if (restoring) onRestore else onArchive) {
+                Icon(
+                    if (restoring) Icons.Filled.Inbox else Icons.Filled.Archive,
+                    contentDescription = if (restoring) "Remettre" else "Archiver",
+                )
+            }
+            if (onMore != null) {
+                IconButton(onClick = onMore) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = "Autres actions")
+                }
+            }
+        },
+    )
 }
 
 /**
@@ -352,17 +454,25 @@ private fun SwipeRow(
     onAction: (SwipeAction) -> Unit,
     content: @Composable () -> Unit,
 ) {
+    // ⚠️ `rememberSwipeToDismissBoxState` GARDE la première lambda qu'on lui
+    // donne : les paramètres capturés à la composition initiale y restent figés
+    // pour la vie de la ligne. Sans `rememberUpdatedState`, neutraliser le
+    // glissement pendant une sélection n'aurait aucun effet — la ligne partirait
+    // quand même, avec l'action d'avant.
+    val start by rememberUpdatedState(startAction)
+    val end by rememberUpdatedState(endAction)
+    val act by rememberUpdatedState(onAction)
     val state = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
             val action = when (value) {
-                SwipeToDismissBoxValue.StartToEnd -> startAction
-                SwipeToDismissBoxValue.EndToStart -> endAction
+                SwipeToDismissBoxValue.StartToEnd -> start
+                SwipeToDismissBoxValue.EndToStart -> end
                 else -> SwipeAction.NONE
             }
             if (action == SwipeAction.NONE) {
                 false
             } else {
-                onAction(action)
+                act(action)
                 true
             }
         },

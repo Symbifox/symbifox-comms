@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material3.DropdownMenu
@@ -47,6 +48,8 @@ fun ThreadRow(
     showLineLabel: Boolean,
     onClick: () -> Unit,
     menuActions: List<ThreadAction>,
+    selected: Boolean = false,
+    onLongClick: (() -> Unit)? = null,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val unread = thread.unreadCount > 0
@@ -55,14 +58,38 @@ fun ThreadRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .background(
+                    if (selected) BrandAccent.copy(alpha = 0.14f) else Color.Transparent,
+                )
                 .combinedClickable(
                     onClick = onClick,
-                    onLongClick = { if (menuActions.isNotEmpty()) menuOpen = true },
+                    onLongClick = {
+                        when {
+                            onLongClick != null -> onLongClick()
+                            menuActions.isNotEmpty() -> menuOpen = true
+                        }
+                    },
                 )
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Avatar(thread.displayName)
+            // Pastille à la place de l'avatar : même largeur, donc la liste
+            // ne saute pas au moment où la sélection commence.
+            if (selected) {
+                Box(
+                    modifier = Modifier.size(46.dp).background(BrandAccent, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Filled.Check,
+                        contentDescription = "Sélectionné",
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+            } else {
+                Avatar(thread.displayName)
+            }
             Spacer(Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

@@ -103,6 +103,9 @@ class ThreadsViewModel : ViewModel() {
     /** Last archive, offered as "Annuler" for a few seconds. */
     var undoable by mutableStateOf<(() -> Unit)?>(null)
         private set
+    /** Ce que l'annulation défera — « Archivé » ou « 5 archivées ». */
+    var undoLabel by mutableStateOf("Archivé")
+        private set
 
     fun clearUndo() {
         undoable = null
@@ -110,6 +113,7 @@ class ThreadsViewModel : ViewModel() {
 
     fun archive(threadId: Int) {
         threads = threads.filterNot { it.id == threadId }
+        undoLabel = "Archivé"
         undoable = { unarchive(threadId) }
         viewModelScope.launch {
             try {
@@ -143,4 +147,106 @@ class ThreadsViewModel : ViewModel() {
         }
     }
 
+    fun dismissError() {
+        error = null
+    }
+
+    // ── Sélection multiple ────────────────────────────────────────────
+    /** Les fils cochés. Vide = liste normale ; c'est la sélection qui EST le mode. */
+    var selection by mutableStateOf<Set<Int>>(emptySet())
+        private set
+
+    val selectionMode: Boolean get() = selection.isNotEmpty()
+
+    private val selectedThreads: List<Thread>
+        get() = threads.filter { it.id in selection }
+
+    /** Tout coché est déjà épinglé : le bouton propose alors l'inverse. */
+    val allSelectedPinned: Boolean
+        get() = selectedThreads.isNotEmpty() && selectedThreads.all { it.isPinned }
+
+    fun toggleSelect(threadId: Int) {
+        selection = if (threadId in selection) selection - threadId else selection + threadId
+    }
+
+    fun clearSelection() {
+        selection = emptySet()
+    }
+
+    fun selectAll() {
+        selection = threads.mapTo(LinkedHashSet()) { it.id }
+    }
+
+    /**
+     * Archive toute la sélection.
+     *
+     * ⚠️ Une requête PAR fil : `/thread/archive` ne prend qu'un identifiant,
+     * contrairement au côté courriel. Elles partent en séquence plutôt qu'en
+     * parallèle — vingt écritures simultanées sur la même base valent une
+     * seconde d'attente de plus.
+     */
+    fun archiveSelected() {
+        val targets = selection.toList()
+        if (targets.isEmpty()) return
+        clearSelection()
+        threads = threads.filterNot { it.id in targets }
+        undoLabel = if (targets.size == 1) "Archivé" else "${targets.size} archivées"
+        undoable = { unarchiveMany(targets) }
+        viewModelScope.launch {
+            var failed = 0
+            targets.forEach { id ->
+                try {
+                    Graph.sms.archive(id, archived = true)
+                } catch (e: Exception) {
+                    failed++
+                }
+            }
+            if (failed > 0) {
+                error = "Archivage impossible pour $failed conversation(s)."
+                refresh()
+            }
+        }
+    }
+
+    private fun unarchiveMany(threadIds: List<Int>) {
+        undoable = null
+        viewModelScope.launch {
+            var failed = 0
+            threadIds.forEach { id ->
+                try {
+                    Graph.sms.archive(id, archived = false)
+                } catch (e: Exception) {
+                    failed++
+                }
+            }
+            if (failed > 0) error = "Annulation incomplète."
+            refresh()
+        }
+    }
+
+    /**
+     * Épingle ou désépingle toute la sélection.
+     *
+     * Le point d'entrée du serveur BASCULE l'état ; appelé sur une sélection
+     * mêlant épinglés et non épinglés, il les inverserait tous les deux et ne
+     * réglerait rien. On n'appelle donc que les fils qui ne sont pas déjà dans
+     * l'état voulu.
+     */
+    fun pinSelected(pin: Boolean) {
+        val targets = selectedThreads.filter { it.isPinned != pin }.map { it.id }
+        clearSelection()
+        if (targets.isEmpty()) return
+        viewModelScope.launch {
+            var failed = 0
+            targets.forEach { id ->
+                try {
+                    Graph.sms.pin(id)
+                } catch (e: Exception) {
+                    failed++
+                }
+            }
+            if (failed > 0) error = "Action impossible pour $failed conversation(s)."
+            refresh() // le serveur retrie, épinglés d'abord
+        }
+    }
 }
