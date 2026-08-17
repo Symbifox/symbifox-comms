@@ -10,6 +10,15 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-feature android:name="android.hardware.microphone" android:required="false"/>
 
+    <!-- Poste SIP : la conversation doit survivre à l'écran éteint et au
+         passage dans une autre app, donc l'appel tient un service au premier
+         plan. Le type « microphone » est celui qui correspond : l'app capte le
+         micro en arrière-plan. Le type « phoneCall » exigerait MANAGE_OWN_CALLS
+         et une intégration au journal d'appels du système, qu'on ne veut pas. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+
     <!-- Discover UnifiedPush distributors (ntfy, etc.) on Android 11+. -->
     <queries>
         <intent>
@@ -92,6 +101,12 @@
         <receiver
             android:name=".push.MailMarkReadReceiver"
             android:exported="false"/>
+
+
+        <service
+            android:name=".sip.CallService"
+            android:exported="false"
+            android:foregroundServiceType="microphone"/>
 
     </application>
 

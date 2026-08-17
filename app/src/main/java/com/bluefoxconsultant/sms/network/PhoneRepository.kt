@@ -11,18 +11,21 @@ import com.bluefoxconsultant.sms.data.CallLogResponse
 import com.bluefoxconsultant.sms.data.PhoneConfig
 import com.bluefoxconsultant.sms.data.PhoneContact
 import com.bluefoxconsultant.sms.data.PhoneContactsResponse
+import com.bluefoxconsultant.sms.data.SipConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 
 /**
- * Calls placed by the PBX, not by this handset.
+ * Le téléphone, côté réseau : demander au PBX, et — depuis la phase B —
+ * s'enregistrer comme poste.
  *
- * The app carries no SIP stack: it asks the server, the PBX rings the user's own
- * device and then dials the correspondent, so the call goes out with the
- * business line's caller ID instead of a personal number. Nothing here touches
- * the microphone, and nothing here needs a permission.
+ * Deux façons d'appeler cohabitent, et c'est voulu. [call] demande au PBX de
+ * faire sonner un AUTRE appareil (un cellulaire, le poste du bureau) : aucun
+ * micro, aucune permission, ça marche même app fermée. [sipConfig] sert
+ * l'autre : les identifiants qui font de l'appareil un poste à part entière,
+ * capable de composer lui-même et de porter la conversation.
  *
  * Rides on the Messages bearer token — `bf_softphone` depends on
  * `bf_sms_archive` server-side, so the phone is a capability of that session
@@ -39,6 +42,21 @@ class PhoneRepository(private val api: ApiClient) {
 
     suspend fun config(): PhoneConfig = withContext(Dispatchers.IO) {
         json.decodeFromString(api.get("/config"))
+    }
+
+    /**
+     * Les identifiants SIP de cet utilisateur, pour que l'app devienne un poste.
+     *
+     * ⚠️ Le mot de passe SIP arrive en clair : il ne doit ni être journalisé,
+     * ni écrit sur le disque. Il est passé à la WebView et vit en mémoire le
+     * temps de la session — c'est déjà ce que fait le navigateur.
+     *
+     * Le poste rendu est le MÊME que celui du navigateur. Le PBX fait sonner
+     * tous les appareils enregistrés, donc s'enregistrer ici ajoute un endroit
+     * où décrocher ; ça n'en retire aucun.
+     */
+    suspend fun sipConfig(): SipConfig = withContext(Dispatchers.IO) {
+        json.decodeFromString(api.get("/sip"))
     }
 
     /** Contacts matching what has been dialled so far. */

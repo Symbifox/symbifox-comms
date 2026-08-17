@@ -50,6 +50,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.bluefoxconsultant.sms.data.Graph
+import com.bluefoxconsultant.sms.sip.SipEngine
 import com.bluefoxconsultant.sms.data.Service
 import com.bluefoxconsultant.sms.push.Notifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -258,6 +259,15 @@ private fun HomeShell(
             // the keypad can earn its own tab.
             Graph.phoneStore.ensureLoaded()
         }
+    }
+
+    // Le poste SIP démarre avec l'app, pas avec l'onglet du clavier : un poste
+    // qui ne s'enregistre qu'une fois l'écran ouvert ne sonnerait jamais pour un
+    // appel entrant. Il s'arrête tout seul avec le processus ; on ne le coupe
+    // pas au changement d'onglet.
+    val context = LocalContext.current
+    LaunchedEffect(phone.enabled, phone.extension) {
+        if (phone.enabled && phone.extension.isNotBlank()) SipEngine.start(context)
     }
 
     val nav = rememberNavController()

@@ -1,0 +1,217 @@
+<meta charset="utf-8">
+<title>Symbifox Comms — poste SIP</title>
+<!--
+  Le poste SIP de l'application, dans une WebView.
+
+  POURQUOI une page web et non une pile SIP native : le softphone du navigateur
+  Odoo tourne déjà sur JsSIP (licence MIT) contre ce même PBX, ce même WSS et ce
+  même TURN. Le portage natif aurait voulu dire liblinphone ou PJSIP — tous deux
+  sous GPL, donc contaminants pour une app sous licence propriétaire, et ~30 Mo
+  de binaire. Ici, WebRTC est fourni par le système et JsSIP pèse 240 Ko.
+
+  ⚠️ La page est chargée depuis https://appassets.androidplatform.net/ (via
+  WebViewAssetLoader), JAMAIS file://. getUserMedia exige une origine sûre :
+  sous file://, la demande de micro est refusée SANS erreur lisible, et l'appel
+  part muet.
+
+  Rien ici ne connaît Odoo : la configuration (URI, mot de passe, TURN) arrive
+  de Kotlin par BFPhone.start(). La page ne fait aucune requête réseau propre.
+-->
+<style>
+  html, body { margin: 0; background: transparent; }
+</style>
+<script src="jssip.min.js"></script>
+<audio id="remote" autoplay playsinline></audio>
+<script>
+(function () {
+  "use strict";
+
+  var ua = null, session = null, startedAt = 0;
+  var remote = document.getElementById("remote");
+
+  // Vers Kotlin. Absent en développement (page ouverte dans un navigateur) :
+  // on tombe alors dans la console plutôt que de lever une exception.
+  function emit(type, data) {
+    var payload = JSON.stringify(Object.assign({ type: type }, data || {}));
+    if (window.BFAndroid && window.BFAndroid.onEvent) window.BFAndroid.onEvent(payload);
+    else console.log("[webphone]", payload);
+  }
+
+  /**
+   * ICE en relais SEULEMENT.
+   *
+   * Le PBX est derrière Cloudflare : un candidat hôte ou réflexif n'aboutit
+   * jamais, et l'attendre ne fait que retarder l'INVITE. Repris tel quel du
+   * service qui tourne en production dans le navigateur.
+   */
+  function pcConfig(iceServers) {
+    return {
+      iceServers: iceServers || [],
+      iceTransportPolicy: "relay",
+      bundlePolicy: "max-bundle",
+      rtcpMuxPolicy: "require",
+    };
+  }
+
+  /**
+   * ⚠️ Envoie l'INVITE dès le PREMIER candidat relais.
+   *
+   * Sans ça, JsSIP attend la fin complète du rassemblement ICE — une vingtaine
+   * de secondes en relay-only. L'appelant croit que rien ne se passe et
+   * raccroche avant que ça sonne. Le délai de 4 s est le filet : on part avec
+   * ce qu'on a plutôt que d'attendre indéfiniment.
+   */
+  function fastOffer(s) {
+    var sent = false, timer = null;
+    function go(ready) {
+      if (sent) return;
+      sent = true;
+      if (timer) { clearTimeout(timer); timer = null; }
+      try { ready(); } catch (e) { /* la session est déjà partie */ }
+    }
+    s.on("icecandidate", function (ev) {
+      if (!timer) timer = setTimeout(function () { go(ev.ready); }, 4000);
+      if (ev.candidate && ev.candidate.type === "relay") go(ev.ready);
+    });
+  }
+
+  function bindRemote() {
+    if (!session || !session.connection) return;
+    session.connection.ontrack = function (e) { remote.srcObject = e.streams[0]; };
+  }
+
+  function peerOf(s) {
+    try {
+      var uri = s.remote_identity && s.remote_identity.uri;
+      return (uri && uri.user) || (s.remote_identity && s.remote_identity.display_name) || "";
+    } catch (e) { return ""; }
+  }
+
+  function wire(s, direction) {
+    session = s;
+    startedAt = 0;
+    bindRemote();
+    fastOffer(s);
+    s.on("peerconnection", bindRemote);
+    s.on("progress", function () { emit("progress", { direction: direction }); });
+    function up() {
+      bindRemote();
+      if (!startedAt) startedAt = Date.now();
+      emit("established", { direction: direction, peer: peerOf(s) });
+    }
+    s.on("accepted", up);
+    s.on("confirmed", up);
+    function down(e) {
+      var seconds = startedAt ? Math.round((Date.now() - startedAt) / 1000) : 0;
+      var peer = peerOf(s);
+      session = null;
+      startedAt = 0;
+      emit("ended", {
+        direction: direction,
+        peer: peer,
+        seconds: seconds,
+        // Jamais décroché : c'est un appel manqué, pas un appel de zéro seconde.
+        answered: seconds > 0 || !!(e && e.originator === "local" && startedAt),
+        cause: (e && e.cause) || "",
+      });
+    }
+    s.on("ended", down);
+    s.on("failed", down);
+  }
+
+  window.BFPhone = {
+    /** Démarre l'agent et s'enregistre. `cfg` vient de /mobile/v1/sip. */
+    start: function (json) {
+      var cfg = typeof json === "string" ? JSON.parse(json) : json;
+      if (ua) { try { ua.stop(); } catch (e) { /* on repart de zéro */ } ua = null; }
+      var socket = new JsSIP.WebSocketInterface(cfg.ws_uri);
+      ua = new JsSIP.UA({
+        sockets: [socket],
+        uri: cfg.sip_uri,
+        password: cfg.password,
+        register: true,
+        // 120 s : assez court pour que le PBX oublie vite un téléphone parti,
+        // assez long pour ne pas réveiller la radio sans arrêt.
+        register_expires: 120,
+        session_timers: false,
+        connection_recovery_min_interval: 2,
+        connection_recovery_max_interval: 15,
+      });
+      window.__bfIce = cfg.ice_servers || [];
+      ua.on("connecting", function () { emit("status", { status: "connecting" }); });
+      ua.on("connected", function () { emit("status", { status: "connecting" }); });
+      ua.on("disconnected", function () { emit("status", { status: "offline" }); });
+      ua.on("registered", function () { emit("status", { status: "registered" }); });
+      ua.on("unregistered", function () { emit("status", { status: "offline" }); });
+      ua.on("registrationFailed", function (e) {
+        emit("status", { status: "failed", cause: (e && e.cause) || "authentification" });
+      });
+      ua.on("newRTCSession", function (e) {
+        // Un seul appel à la fois : le PBX porte déjà la mise en attente, et
+        // deux sessions dans une WebView se disputeraient le micro.
+        if (session) { try { e.session.terminate(); } catch (x) { /* */ } return; }
+        if (e.originator !== "remote") return;
+        wire(e.session, "incoming");
+        emit("incoming", { peer: peerOf(e.session) });
+      });
+      ua.start();
+      return true;
+    },
+
+    stop: function () {
+      try { if (session) session.terminate(); } catch (e) { /* */ }
+      try { if (ua) ua.stop(); } catch (e) { /* */ }
+      session = null; ua = null;
+      emit("status", { status: "offline" });
+    },
+
+    /** Compose. Le PBX applique l'afficheur du poste : rien à passer ici. */
+    call: function (number) {
+      if (!ua) { emit("error", { message: "Le poste n'est pas connecté." }); return false; }
+      if (session) { emit("error", { message: "Un appel est déjà en cours." }); return false; }
+      var s = ua.call("sip:" + number + "@" + ua.configuration.uri.host, {
+        mediaConstraints: { audio: true, video: false },
+        pcConfig: pcConfig(window.__bfIce),
+      });
+      wire(s, "outgoing");
+      emit("calling", { peer: number });
+      return true;
+    },
+
+    answer: function () {
+      if (!session) return false;
+      session.answer({
+        mediaConstraints: { audio: true, video: false },
+        pcConfig: pcConfig(window.__bfIce),
+      });
+      return true;
+    },
+
+    hangup: function () {
+      if (!session) return false;
+      try { session.terminate(); } catch (e) { /* déjà partie */ }
+      return true;
+    },
+
+    /** Touches vers le correspondant, pour les menus vocaux. */
+    dtmf: function (digits) {
+      if (!session) return false;
+      // ⚠️ RFC 2833 et non INFO : le trunk VoIP.ms ne relaie pas les SIP INFO,
+      // les touches tombaient dans le vide sans le moindre message d'erreur.
+      String(digits).split("").forEach(function (d) {
+        try { session.sendDTMF(d, { transportType: "RFC2833" }); } catch (e) { /* */ }
+      });
+      return true;
+    },
+
+    mute: function (on) {
+      if (!session) return false;
+      if (on) session.mute({ audio: true }); else session.unmute({ audio: true });
+      emit("muted", { muted: !!on });
+      return true;
+    },
+  };
+
+  emit("ready", {});
+})();
+</script>

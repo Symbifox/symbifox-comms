@@ -18,8 +18,8 @@ android {
         applicationId = "com.bluefoxconsultant.sms"
         minSdk = 26
         targetSdk = 34
-        versionCode = 29
-        versionName = "2.21.0"
+        versionCode = 30
+        versionName = "2.22.0"
     }
 
     signingConfigs {
@@ -64,6 +64,9 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.browser)
+    // WebViewAssetLoader : sert la page du poste SIP sur une origine https,
+    // seule condition sous laquelle le système accorde le micro.
+    implementation(libs.androidx.webkit)
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)

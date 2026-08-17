@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bluefoxconsultant.sms.data.Graph
+import com.bluefoxconsultant.sms.sip.SipEngine
 import com.bluefoxconsultant.sms.data.PhoneConfig
 import com.bluefoxconsultant.sms.network.ApiException
 import kotlinx.coroutines.launch
@@ -91,7 +92,13 @@ fun CallDialog(
     onPlacing: (Boolean) -> Unit = {},
 ) {
     val config by Graph.phoneStore.config.collectAsStateWithLifecycle()
-    var ring by remember(config.defaultRing) { mutableStateOf(config.defaultRing) }
+    val sip by SipEngine.state.collectAsStateWithLifecycle()
+    // Quand le poste de l'appareil est prêt, c'est LUI qu'on préselectionne :
+    // c'est le seul mode où la conversation a lieu sur l'appareil qu'on tient.
+    // Les autres restent offerts — on peut vouloir faire sonner son cellulaire.
+    var ring by remember(config.defaultRing, sip.ready) {
+        mutableStateOf(if (sip.ready) RING_DEVICE else config.defaultRing)
+    }
     var placing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -101,8 +108,13 @@ fun CallDialog(
         text = {
             Column {
                 Text(
-                    "Le PBX fait d'abord sonner votre appareil. Décrochez, et il " +
-                        "compose le numéro en affichant la ligne d'affaires.",
+                    if (ring == RING_DEVICE) {
+                        "L'appel part d'ici : vous parlez sur cet appareil, et " +
+                            "la ligne d'affaires s'affiche chez votre correspondant."
+                    } else {
+                        "Le PBX fait d'abord sonner votre appareil. Décrochez, et il " +
+                            "compose le numéro en affichant la ligne d'affaires."
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 // The carrier only lets a trunk present a number the account
@@ -118,17 +130,35 @@ fun CallDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                if (config.canRingCallback && config.canRingExtension) {
-                    RingChoice(
-                        label = "Mon numéro de rappel (${config.callbackNumber})",
-                        selected = ring == PhoneConfig.RING_CALLBACK,
-                        onSelect = { ring = PhoneConfig.RING_CALLBACK },
-                    )
-                    RingChoice(
-                        label = "Mon poste ${config.extension}",
-                        selected = ring == PhoneConfig.RING_EXTENSION,
-                        onSelect = { ring = PhoneConfig.RING_EXTENSION },
-                    )
+                // Un seul mode possible = aucun choix à faire. Les options ne
+                // s'affichent qu'à partir de deux.
+                val modes = listOfNotNull(
+                    if (sip.ready) RING_DEVICE else null,
+                    if (config.canRingCallback) PhoneConfig.RING_CALLBACK else null,
+                    if (config.canRingExtension) PhoneConfig.RING_EXTENSION else null,
+                )
+                if (modes.size > 1) {
+                    if (RING_DEVICE in modes) {
+                        RingChoice(
+                            label = "Sur cet appareil",
+                            selected = ring == RING_DEVICE,
+                            onSelect = { ring = RING_DEVICE },
+                        )
+                    }
+                    if (PhoneConfig.RING_CALLBACK in modes) {
+                        RingChoice(
+                            label = "Mon numéro de rappel (${config.callbackNumber})",
+                            selected = ring == PhoneConfig.RING_CALLBACK,
+                            onSelect = { ring = PhoneConfig.RING_CALLBACK },
+                        )
+                    }
+                    if (PhoneConfig.RING_EXTENSION in modes) {
+                        RingChoice(
+                            label = "Mon poste ${config.extension} (navigateur)",
+                            selected = ring == PhoneConfig.RING_EXTENSION,
+                            onSelect = { ring = PhoneConfig.RING_EXTENSION },
+                        )
+                    }
                 }
             }
         },
@@ -136,6 +166,15 @@ fun CallDialog(
             TextButton(
                 enabled = !placing,
                 onClick = {
+                    // ⚠️ Le poste de l'appareil ne passe PAS par /call : il
+                    // compose lui-même par SIP. Le clic-pour-appeler monte deux
+                    // jambes (le PBX rappelle, puis compose) ; ici il n'en faut
+                    // qu'une, et elle part tout de suite.
+                    if (ring == RING_DEVICE) {
+                        SipEngine.call(number)
+                        onDismiss()
+                        return@TextButton
+                    }
                     placing = true
                     onPlacing(true)
                     scope.launch {
@@ -169,6 +208,15 @@ fun CallDialog(
         },
     )
 }
+
+/**
+ * Le mode « l'appareil est le poste ».
+ *
+ * Il ne voyage jamais jusqu'au serveur : /call ne connaît que `callback` et
+ * `extension`. C'est une valeur d'interface qui signifie « ne demande rien au
+ * PBX, compose toi-même ».
+ */
+private const val RING_DEVICE = "device"
 
 @Composable
 private fun RingChoice(label: String, selected: Boolean, onSelect: () -> Unit) {

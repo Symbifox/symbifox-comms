@@ -7,6 +7,7 @@ activityCompose = "1.9.3"
 composeBom = "2024.09.03"
 navigation = "2.8.3"
 browser = "1.8.0"
+webkit = "1.11.0"
 okhttp = "4.12.0"
 serializationJson = "1.7.3"
 securityCrypto = "1.1.0-alpha06"
@@ -20,6 +21,7 @@ androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lif
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigation" }
 androidx-browser = { group = "androidx.browser", name = "browser", version.ref = "browser" }
+androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "webkit" }
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 compose-ui = { group = "androidx.compose.ui", name = "ui" }
 compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }

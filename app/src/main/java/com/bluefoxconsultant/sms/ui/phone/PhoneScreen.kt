@@ -1,5 +1,8 @@
 package com.bluefoxconsultant.sms.ui.phone
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -25,6 +28,14 @@ import androidx.compose.material.icons.filled.Backspace
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Person
+import com.bluefoxconsultant.sms.sip.SipStatus
+import com.bluefoxconsultant.sms.sip.SipEngine
+import com.bluefoxconsultant.sms.sip.CallLeg
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.VolumeDown
+import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -69,6 +80,21 @@ import com.bluefoxconsultant.sms.ui.theme.BrandAccent
 fun PhoneScreen(vm: PhoneViewModel = viewModel()) {
     val snackbar = remember { SnackbarHostState() }
     var calling by remember { mutableStateOf(false) }
+    val sip by SipEngine.state.collectAsStateWithLifecycle()
+    // Le micro n'est demandé qu'ici, au moment où le clavier s'ouvre : un poste
+    // qui réclame le micro au lancement de l'app inquiète pour rien.
+    val micro = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { /* refusé : l'appel partira muet, et le dira au premier essai */ }
+    LaunchedEffect(sip.status) {
+        if (sip.status != SipStatus.UNAVAILABLE) micro.launch(Manifest.permission.RECORD_AUDIO)
+    }
+    LaunchedEffect(sip.error) {
+        sip.error?.let {
+            snackbar.showSnackbar(it)
+            SipEngine.clearError()
+        }
+    }
 
     LaunchedEffect(Unit) { vm.refresh() }
     // Le guet s'arrête avec l'écran : rien ne tourne en arrière-plan.
@@ -104,7 +130,19 @@ fun PhoneScreen(vm: PhoneViewModel = viewModel()) {
             // Un appel en cours prend le haut de l'écran : c'est la seule
             // commande dont on a besoin tant qu'il dure, et le combiné ne peut
             // pas la deviner — c'est le PBX qui porte l'appel.
-            vm.active.firstOrNull()?.let { call ->
+            // Deux barres possibles, jamais les deux : soit l'appel est porté
+            // par cet appareil, soit il est porté par le PBX pour un autre.
+            sip.call?.let { leg ->
+                SipCallBar(
+                    leg = leg,
+                    muted = sip.muted,
+                    speaker = sip.speaker,
+                    onMute = { SipEngine.setMuted(!sip.muted) },
+                    onSpeaker = { SipEngine.setSpeaker(!sip.speaker) },
+                    onAnswer = { SipEngine.answer() },
+                    onHangup = { SipEngine.hangup() },
+                )
+            } ?: vm.active.firstOrNull()?.let { call ->
                 InCallBar(
                     call = call,
                     hangingUp = vm.hangingUp,
@@ -135,9 +173,19 @@ fun PhoneScreen(vm: PhoneViewModel = viewModel()) {
             HorizontalDivider()
             // ⚠️ Pendant un appel, une touche répond au menu d'en face ; elle
             // n'écrit pas un numéro. Même clavier, deux sens selon l'état.
-            val enCommunication = vm.active.any { it.isUp }
+            val surCetAppareil = sip.call?.established == true
+            val enCommunication = surCetAppareil || vm.active.any { it.isUp }
             Keypad(
-                onDigit = { key -> if (enCommunication) vm.sendDtmf(key) else vm.press(key) },
+                onDigit = { key ->
+                    when {
+                        // Sur un appel porté ici, les touches partent par la
+                        // session SIP : passer par le PBX les jouerait dans une
+                        // jambe qui n'existe pas.
+                        surCetAppareil -> SipEngine.dtmf(key.toString())
+                        enCommunication -> vm.sendDtmf(key)
+                        else -> vm.press(key)
+                    }
+                },
                 onBackspace = vm::backspace,
                 onClear = { if (enCommunication) vm.clearDtmf() else vm.clear() },
             )
@@ -181,6 +229,90 @@ fun PhoneScreen(vm: PhoneViewModel = viewModel()) {
 }
 
 private val CALL_GREEN = Color(0xFF2E9E5B)
+
+/**
+ * L'appel que porte CET appareil.
+ *
+ * Distincte de [InCallBar], qui montre ce que le PBX porte ailleurs : ici il y
+ * a un micro à couper et un haut-parleur à basculer, et un appel entrant se
+ * décroche. Rien de tout ça n'a de sens quand l'audio est sur un autre appareil.
+ */
+@Composable
+private fun SipCallBar(
+    leg: CallLeg,
+    muted: Boolean,
+    speaker: Boolean,
+    onMute: () -> Unit,
+    onSpeaker: () -> Unit,
+    onAnswer: () -> Unit,
+    onHangup: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(CALL_GREEN.copy(alpha = 0.12f))
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+    ) {
+        Text(
+            text = leg.peer.ifBlank { "Appel" },
+            fontSize = 18.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            text = when {
+                leg.established -> "En communication sur cet appareil"
+                leg.incoming -> "Appel entrant"
+                else -> "Appel en cours…"
+            },
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (leg.established) {
+                TextButton(onClick = onMute) {
+                    Icon(
+                        if (muted) Icons.Filled.MicOff else Icons.Filled.Mic,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.size(6.dp))
+                    Text(if (muted) "Réactiver" else "Muet")
+                }
+                TextButton(onClick = onSpeaker) {
+                    Icon(
+                        if (speaker) Icons.Filled.VolumeUp else Icons.Filled.VolumeDown,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.size(6.dp))
+                    Text(if (speaker) "Haut-parleur" else "Écouteur")
+                }
+            } else if (leg.incoming) {
+                TextButton(onClick = onAnswer) {
+                    Icon(Icons.Filled.Call, contentDescription = null,
+                         modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.size(6.dp))
+                    Text("Répondre")
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            TextButton(onClick = onHangup) {
+                Icon(
+                    Icons.Filled.CallEnd,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.size(6.dp))
+                Text("Raccrocher", color = MaterialTheme.colorScheme.error)
+            }
+        }
+    }
+}
 
 @Composable
 private fun InCallBar(

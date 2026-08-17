@@ -117,3 +117,34 @@ data class DtmfResponse(
     val sent: Int = 0,
     val digits: String = "",
 )
+
+/**
+ * De quoi s'enregistrer comme poste SIP.
+ *
+ * ⚠️ [password] est un secret en clair. Il vient du réseau, va directement à la
+ * WebView, et ne doit JAMAIS être écrit sur le disque ni journalisé — c'est la
+ * raison pour laquelle il n'y a pas de cache ici, contrairement à [PhoneConfig].
+ * Un poste qu'on ne peut pas joindre est un désagrément ; un mot de passe SIP
+ * dans un fichier de préférences est une porte ouverte sur la ligne d'affaires.
+ */
+@Serializable
+data class SipConfig(
+    /** Faux quand le compte n'a pas de poste : l'app s'en tient au rappel. */
+    val enabled: Boolean = false,
+    @SerialName("ws_uri") val wsUri: String = "",
+    @SerialName("sip_uri") val sipUri: String = "",
+    val extension: String = "",
+    val password: String = "",
+    @SerialName("ice_servers") val iceServers: List<IceServer> = emptyList(),
+) {
+    /** Tout ce qu'il faut est là ? Une config à moitié servie ne s'enregistre pas. */
+    val usable: Boolean
+        get() = enabled && wsUri.isNotBlank() && sipUri.isNotBlank() && password.isNotBlank()
+}
+
+@Serializable
+data class IceServer(
+    val urls: List<String> = emptyList(),
+    val username: String = "",
+    val credential: String = "",
+)
