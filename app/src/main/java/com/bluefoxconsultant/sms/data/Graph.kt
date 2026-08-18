@@ -3,6 +3,7 @@ package com.bluefoxconsultant.sms.data
 import android.content.Context
 import com.bluefoxconsultant.sms.network.ApiClient
 import com.bluefoxconsultant.sms.network.GenfoxRepository
+import com.bluefoxconsultant.sms.network.HostingRepository
 import com.bluefoxconsultant.sms.network.MailRepository
 import com.bluefoxconsultant.sms.network.PhoneRepository
 import com.bluefoxconsultant.sms.network.Repository
@@ -20,6 +21,9 @@ object Graph {
 
     /** REST surface of `bf_claude_chat` (the assistant). */
     private const val GENFOX_API_PATH = "/bf_claude_chat/mobile/v1"
+
+    /** REST surface of `bf_hosting_mobile` (alertes du parc). */
+    private const val HOSTING_API_PATH = "/bf_hosting/mobile/v1"
 
     lateinit var tokenStore: TokenStore
         private set
@@ -64,6 +68,16 @@ object Graph {
     lateinit var genfox: GenfoxRepository
         private set
     lateinit var genfoxStore: GenfoxStore
+        private set
+
+    /**
+     * Hébergement — `bf_hosting_mobile`. Même jeton que les messages, comme le
+     * téléphone : surveiller le parc est une capacité de la session en place,
+     * pas un compte de plus. En lecture seule, sans exception.
+     */
+    lateinit var hosting: HostingRepository
+        private set
+    lateinit var hostingStore: HostingStore
         private set
 
     /** Last-known mailbox on disk, and actions taken while offline. */
@@ -112,6 +126,10 @@ object Graph {
             tokenStore,
         )
         genfoxStore = GenfoxStore(genfox)
+        hosting = HostingRepository(
+            ApiClient(tokenStore, Service.SMS, apiPath = HOSTING_API_PATH),
+        )
+        hostingStore = HostingStore(hosting)
         mailCache = MailCache(context.applicationContext)
         outbox = MailOutbox(context.applicationContext)
         drafts = MailDrafts(context.applicationContext)

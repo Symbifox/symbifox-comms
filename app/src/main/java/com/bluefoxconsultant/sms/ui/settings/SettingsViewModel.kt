@@ -33,6 +33,9 @@ class SettingsViewModel : ViewModel() {
             // made them; neither should greet the next person to sign in.
             Graph.mailCache.clear()
             Graph.outbox.clear()
+            // Un brouillon porte le TEXTE de la session qui l'a écrit : le
+            // laisser, c'est ouvrir le courriel d'hier à la personne suivante.
+            Graph.drafts.clear()
             // The next person to sign in may work for someone else.
             Graph.brandStore.reset()
             // Their phone rights are not this user's, and the call button must
@@ -40,6 +43,7 @@ class SettingsViewModel : ViewModel() {
             Graph.phoneStore.invalidate()
             Graph.speechStore.invalidate()
             Graph.genfoxStore.invalidate()
+            Graph.hostingStore.invalidate()
             store.clearAllTokens()
         }
     }

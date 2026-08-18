@@ -16,6 +16,7 @@ object Notifier {
     const val CHANNEL_ID = "sms"
     const val CHANNEL_MAIL = "mail"
     const val CHANNEL_GENFOX = "genfox"
+    const val CHANNEL_HOSTING = "hosting"
     const val EXTRA_THREAD_ID = "thread_id"
     const val EXTRA_NOTIF_ID = "notif_id"
     const val EXTRA_EMAIL_ID = "email_id"
@@ -30,9 +31,23 @@ object Notifier {
 
     /** Same reasoning for the assistant: its own tag, cleared on its own. */
     const val TAG_GENFOX = "genfox"
+
+    /**
+     * Une seule notification d'hébergement, jamais une pile : l'état du parc
+     * est UN état, et vingt lignes dans le tiroir n'apprennent rien de plus
+     * qu'une ligne qui dit combien. Identifiant fixe, donc chaque cycle
+     * remplace la précédente au lieu de s'empiler.
+     *
+     * ⚠️ Étiquetée, comme le courriel : `cancelAll` balaie les notifications
+     * SANS étiquette. Sans celle-ci, ouvrir un texto effacerait l'avis de panne.
+     */
+    const val TAG_HOSTING = "hosting"
+    const val HOSTING_ID = 0x405705
     const val EXTRA_GENFOX_SESSION = "genfox_session_id"
 
     private const val BF_BLUE = 0xFF29ABE2.toInt()
+    private const val ALERT_RED = 0xFFD32F2F.toInt()
+    private const val ALERT_AMBER = 0xFFF57C00.toInt()
 
     /** Stable per-thread notification id so `clear` can target it. */
     fun notifId(threadId: Int): Int = "thread-$threadId".hashCode()
@@ -293,6 +308,76 @@ object Notifier {
         } catch (e: SecurityException) {
             // ignore
         }
+    }
+
+    private fun ensureHostingChannel(context: Context) {
+        val nm = context.getSystemService(NotificationManager::class.java) ?: return
+        if (nm.getNotificationChannel(CHANNEL_HOSTING) == null) {
+            // Importance haute : un service à terre est la seule chose que
+            // cette app ait à dire qui ne puisse pas attendre le matin.
+            val channel = NotificationChannel(
+                CHANNEL_HOSTING,
+                "Hébergement",
+                NotificationManager.IMPORTANCE_HIGH,
+            ).apply {
+                description = "Services hors ligne, disques pleins, sauvegardes en retard"
+            }
+            nm.createNotificationChannel(channel)
+        }
+    }
+
+    /**
+     * L'état du parc, ou rien.
+     *
+     * Persistante (`ongoing`) tant que quelque chose ne va pas : une alerte
+     * qu'on peut balayer d'un doigt distrait ne remplit pas son office, et le
+     * seul geste qui doit la faire disparaître est que la panne cesse. Elle est
+     * donc RETIRÉE d'ici même dès que le parc est en ordre — c'est la
+     * contrepartie, sans quoi elle resterait à mentir dans le tiroir.
+     *
+     * ⚠️ `setOnlyAlertOnce` : reposée à chaque cycle, elle sonnerait toutes les
+     * quatre-vingt-dix secondes pendant toute la durée d'une panne.
+     */
+    fun showHosting(context: Context, alerts: com.bluefoxconsultant.sms.data.HostingAlerts) {
+        if (!alerts.enabled || !alerts.hasAny) {
+            clearHosting(context)
+            return
+        }
+        ensureHostingChannel(context)
+        val contentIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val contentPi = PendingIntent.getActivity(
+            context, HOSTING_ID, contentIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val lines = alerts.alerts.take(6).map { "${it.service} — ${it.detail}" }
+        val style = NotificationCompat.InboxStyle()
+        lines.forEach { style.addLine(it) }
+        if (alerts.count > lines.size) {
+            style.setSummaryText("et ${alerts.count - lines.size} de plus")
+        }
+        val notification = NotificationCompat.Builder(context, CHANNEL_HOSTING)
+            .setSmallIcon(R.drawable.ic_stat_sms)
+            .setColor(if (alerts.isDown) ALERT_RED else ALERT_AMBER)
+            .setContentTitle(if (alerts.isDown) "Hébergement — panne" else "Hébergement")
+            .setContentText(alerts.summary)
+            .setStyle(style)
+            .setCategory(NotificationCompat.CATEGORY_ERROR)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setAutoCancel(false)
+            .setContentIntent(contentPi)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(TAG_HOSTING, HOSTING_ID, notification)
+        } catch (e: SecurityException) {
+            // POST_NOTIFICATIONS refusée — la bannière dans l'app reste.
+        }
+    }
+
+    fun clearHosting(context: Context) {
+        NotificationManagerCompat.from(context).cancel(TAG_HOSTING, HOSTING_ID)
     }
 
     fun cancelThread(context: Context, threadId: Int) {

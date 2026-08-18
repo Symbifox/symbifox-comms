@@ -191,6 +191,7 @@ class AuthViewModel : ViewModel() {
         Graph.phoneStore.invalidate()
         Graph.speechStore.invalidate()
         Graph.genfoxStore.invalidate()
+        Graph.hostingStore.invalidate()
         Graph.tokenStore.clearInstance()
     }
 

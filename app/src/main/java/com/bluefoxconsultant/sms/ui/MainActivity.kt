@@ -9,10 +9,12 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -26,6 +28,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -37,6 +40,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -298,6 +302,14 @@ private fun HomeShell(
         if (phone.enabled && phone.extension.isNotBlank()) SipEngine.start(context)
     }
 
+    // La veille du parc démarre avec la session, pas avec un écran : elle n'a
+    // pas d'onglet à elle, et le serveur dit lui-même quand s'arrêter (l'usager
+    // n'a pas l'hébergement). Elle survit au changement d'onglet, comme le poste.
+    val hosting by Graph.hostingStore.state.collectAsStateWithLifecycle()
+    LaunchedEffect(tokens.isNotEmpty()) {
+        if (tokens.isNotEmpty()) Graph.hostingStore.start(context)
+    }
+
     val nav = rememberNavController()
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
@@ -351,6 +363,10 @@ private fun HomeShell(
     val startTab = if (Service.SMS in tabs) Tabs.SMS else Tabs.MAIL
 
     Column(Modifier.fillMaxSize()) {
+        // Au-dessus de tout, sur tous les onglets : une panne ne se range pas
+        // dans une section. Sur un écran de détail aussi — c'est justement en
+        // lisant autre chose qu'on veut l'apprendre.
+        if (hosting.enabled && hosting.hasAny) HostingBanner(hosting)
         NavHost(
             navController = nav,
             startDestination = startTab,
@@ -518,6 +534,52 @@ private fun HomeShell(
         }
     }
 }
+
+/**
+ * Ce qui ne va pas dans le parc, en une ligne.
+ *
+ * Rouge pour une panne, ambre pour le reste : un disque plein et un service à
+ * terre ne demandent pas le même geste, et tout peindre en rouge finit par
+ * rendre le rouge illisible. Sans bouton : agir sur l'hébergement depuis un
+ * téléphone est le meilleur moyen de relancer une pile au mauvais moment, et
+ * le bureau est à deux clics quand il faut vraiment intervenir.
+ */
+@Composable
+private fun HostingBanner(alerts: com.bluefoxconsultant.sms.data.HostingAlerts) {
+    var open by remember { mutableStateOf(false) }
+    Surface(color = if (alerts.isDown) AlertRed else AlertAmber) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { open = !open }
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+        ) {
+            Text(
+                if (alerts.isDown) "Hébergement — ${alerts.summary}"
+                else "Hébergement : ${alerts.summary}",
+                color = Color.White,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            // Repliée par défaut : la ligne suffit à savoir qu'il faut regarder,
+            // et une liste de vingt services en haut de chaque écran ne serait
+            // plus une bannière.
+            if (open) {
+                alerts.alerts.forEach { alert ->
+                    Text(
+                        "${alert.service} — ${alert.detail}",
+                        color = Color.White.copy(alpha = 0.9f),
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(top = 3.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+private val AlertRed = Color(0xFFD32F2F)
+private val AlertAmber = Color(0xFFF57C00)
 
 /**
  * Offered when the server has a module the app holds no token for — after an
