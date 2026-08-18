@@ -28,6 +28,8 @@ import androidx.compose.material.icons.filled.Backspace
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Close
 import com.bluefoxconsultant.sms.data.OdooLinks
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.platform.LocalContext
@@ -52,6 +54,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -71,6 +74,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -90,9 +95,15 @@ import com.bluefoxconsultant.sms.ui.theme.BrandAccent
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun PhoneScreen(vm: PhoneViewModel = viewModel()) {
+fun PhoneScreen(
+    vm: PhoneViewModel = viewModel(),
+    prefill: String? = null,
+    onPrefillConsumed: () -> Unit = {},
+) {
     val snackbar = remember { SnackbarHostState() }
     var calling by remember { mutableStateOf(false) }
+    var searchOpen by remember { mutableStateOf(false) }
+    val searchFocus = remember { FocusRequester() }
     var menuFor by remember { mutableStateOf<CallLogEntry?>(null) }
     val sip by SipEngine.state.collectAsStateWithLifecycle()
     // Le micro n'est demandé qu'ici, au moment où le clavier s'ouvre : un poste
@@ -108,6 +119,17 @@ fun PhoneScreen(vm: PhoneViewModel = viewModel()) {
             snackbar.showSnackbar(it)
             SipEngine.clearError()
         }
+    }
+
+    // Un numéro venu d'ailleurs — un tel: sur une page web, une fiche de
+    // contact : il s'affiche au clavier, prêt à partir. On n'appelle PAS tout
+    // seul : composer pour quelqu'un est une chose, appeler à sa place en est
+    // une autre.
+    LaunchedEffect(prefill) {
+        val number = prefill ?: return@LaunchedEffect
+        vm.set(number)
+        searchOpen = false
+        onPrefillConsumed()
     }
 
     LaunchedEffect(Unit) { vm.refresh() }
@@ -128,6 +150,20 @@ fun PhoneScreen(vm: PhoneViewModel = viewModel()) {
         topBar = {
             TopAppBar(
                 title = { Text("Téléphone", fontWeight = FontWeight.SemiBold) },
+                actions = {
+                    IconButton(
+                        onClick = {
+                            searchOpen = !searchOpen
+                            if (!searchOpen) vm.closeSearch()
+                        },
+                    ) {
+                        Icon(
+                            if (searchOpen) Icons.Filled.Close else Icons.Filled.Search,
+                            contentDescription = if (searchOpen) "Fermer la recherche"
+                            else "Chercher un contact",
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = BrandAccent,
                     titleContentColor = Color.White,
@@ -164,8 +200,38 @@ fun PhoneScreen(vm: PhoneViewModel = viewModel()) {
                     onHangup = vm::hangup,
                 )
             }
+            if (searchOpen) {
+                OutlinedTextField(
+                    value = vm.query,
+                    onValueChange = vm::searchName,
+                    placeholder = { Text("Nom du contact") },
+                    singleLine = true,
+                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .focusRequester(searchFocus),
+                )
+                // Ouvrir un champ vide sans y mettre le curseur oblige à viser
+                // deux fois pour une seule intention.
+                LaunchedEffect(Unit) { runCatching { searchFocus.requestFocus() } }
+            }
             Box(Modifier.weight(1f)) {
                 when {
+                    // La recherche ouverte commande l'écran : c'est ce qu'on
+                    // regarde, même si un numéro traîne encore au clavier.
+                    vm.query.isNotBlank() -> if (vm.matches.isEmpty()) {
+                        Text(
+                            "Aucun contact à ce nom.",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(24.dp),
+                        )
+                    } else {
+                        ContactList(vm.matches) { vm.set(it.number); searchOpen = false }
+                    }
                     // What you are dialling decides what is useful underneath:
                     // matching contacts while typing, the log when idle.
                     vm.dialled.isNotEmpty() && vm.matches.isNotEmpty() ->

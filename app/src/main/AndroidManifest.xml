@@ -46,6 +46,33 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Un numéro tapé ailleurs — lien tel: d'une page web, fiche de
+                 contact, bouton « appeler » d'une autre app — peut être composé
+                 ici : l'app devient un choix possible dans le sélecteur.
+                 ⚠️ ACTION_DIAL et ACTION_VIEW, jamais ACTION_CALL : composer
+                 sans que personne ne relise le numéro exigerait CALL_PHONE, et
+                 l'appel part de toute façon par le PBX, pas par la carte SIM.
+                 Devenir le téléphone PAR DÉFAUT est autre chose encore — il
+                 faudrait un InCallService qui prenne en charge les appels
+                 cellulaires, ce que ce poste SIP ne fait pas. -->
+            <intent-filter>
+                <action android:name="android.intent.action.DIAL"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="tel"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="tel"/>
+            </intent-filter>
+            <!-- « Composer » sans numéro : un raccourci, ou l'assistant. -->
+            <intent-filter>
+                <action android:name="android.intent.action.DIAL"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+
             <!-- Web-login capture deep link: com.bluefoxconsultant.sms://auth?code=&state= -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>

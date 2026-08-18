@@ -7,6 +7,9 @@ import android.service.voice.VoiceInteractionSession
 import android.service.voice.VoiceInteractionSessionService
 import com.bluefoxconsultant.sms.ui.MainActivity
 
+/** Marqueur porté par l'intention : « on arrive par le geste d'assistance ». */
+const val EXTRA_ASSIST = "bf_assist"
+
 /**
  * GenFox comme assistant du système.
  *
@@ -47,9 +50,5 @@ private class AssistSession(context: android.content.Context) :
         // Se retirer tout de suite : la session système ne sert que de relais,
         // et la laisser ouverte figerait un panneau vide par-dessus l'app.
         hide()
-    }
-
-    companion object {
-        const val EXTRA_ASSIST = "bf_assist"
     }
 }

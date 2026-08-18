@@ -88,10 +88,19 @@ import kotlinx.coroutines.launch
  * in a pocket. Conversations here are read-only on the server side — the
  * assistant can look things up, not change them — which the empty state says
  * out loud rather than leaving to be discovered.
+ *
+ * [assist] est vrai quand on arrive par le geste d'assistance du système. Ce
+ * geste ne veut pas dire « ouvre l'app » mais « je te parle » : la conversation
+ * part donc à neuf, et le micro s'ouvre sans qu'on ait à viser un bouton — ce
+ * qui est tout l'intérêt d'un assistant qu'on appelle une main sur le volant.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GenfoxScreen(vm: GenfoxViewModel = viewModel()) {
+fun GenfoxScreen(
+    vm: GenfoxViewModel = viewModel(),
+    assist: Boolean = false,
+    onAssistConsumed: () -> Unit = {},
+) {
     val snackbar = remember { SnackbarHostState() }
     val listState = rememberLazyListState()
     var historyOpen by remember { mutableStateOf(false) }
@@ -115,6 +124,25 @@ fun GenfoxScreen(vm: GenfoxViewModel = viewModel()) {
     ) { granted ->
         if (granted) handsFree.start()
         else scope.launch { snackbar.showSnackbar("Sans accès au micro, pas de mains libres.") }
+    }
+
+    // Le bouton de la barre et le geste d'assistance passent par ici : demander
+    // la permission à deux endroits, c'est se garantir qu'un des deux l'oublie.
+    fun startHandsFree() {
+        val granted = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.RECORD_AUDIO,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) handsFree.start() else askPermission.launch(Manifest.permission.RECORD_AUDIO)
+    }
+
+    // Le geste d'assistance : conversation neuve, micro ouvert. Consommé tout
+    // de suite, sinon un simple retour à l'onglet repartirait à zéro et
+    // effacerait la question qu'on venait de poser.
+    LaunchedEffect(assist) {
+        if (!assist) return@LaunchedEffect
+        vm.startFresh()
+        startHandsFree()
+        onAssistConsumed()
     }
 
     // A finished turn is what drives the loop forward: say it, then listen again.
@@ -158,15 +186,7 @@ fun GenfoxScreen(vm: GenfoxViewModel = viewModel()) {
                 actions = {
                     IconButton(
                         onClick = {
-                            if (handsFree.isOn) {
-                                handsFree.stop()
-                            } else {
-                                val granted = ContextCompat.checkSelfPermission(
-                                    context, Manifest.permission.RECORD_AUDIO,
-                                ) == PackageManager.PERMISSION_GRANTED
-                                if (granted) handsFree.start()
-                                else askPermission.launch(Manifest.permission.RECORD_AUDIO)
-                            }
+                            if (handsFree.isOn) handsFree.stop() else startHandsFree()
                         },
                     ) {
                         Icon(

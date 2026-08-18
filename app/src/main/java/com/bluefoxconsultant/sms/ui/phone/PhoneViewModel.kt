@@ -18,6 +18,16 @@ class PhoneViewModel : ViewModel() {
 
     var dialled by mutableStateOf("")
         private set
+
+    /**
+     * Ce qui est tapé dans la recherche par nom, quand elle est ouverte.
+     *
+     * Un clavier téléphonique ne produit que des chiffres, et le carnet
+     * d'adresses est côté serveur : sans champ de texte, un contact dont on ne
+     * connaît pas le numéro était inatteignable depuis cet écran.
+     */
+    var query by mutableStateOf("")
+        private set
     var matches by mutableStateOf<List<PhoneContact>>(emptyList())
         private set
     var calls by mutableStateOf<List<CallLogEntry>>(emptyList())
@@ -57,11 +67,24 @@ class PhoneViewModel : ViewModel() {
 
     fun clear() {
         dialled = ""
-        matches = emptyList()
+        // Par search() plutôt que d'effacer : le « C » vide le numéro, il ne
+        // doit pas emporter une recherche par nom ouverte à côté.
+        search()
     }
 
     fun set(number: String) {
         dialled = number
+        query = ""
+        matches = emptyList()
+    }
+
+    fun searchName(text: String) {
+        query = text
+        search()
+    }
+
+    fun closeSearch() {
+        query = ""
         matches = emptyList()
     }
 
@@ -144,8 +167,12 @@ class PhoneViewModel : ViewModel() {
 
     private fun search() {
         searchJob?.cancel()
-        val term = dialled.trim()
-        if (term.length < 3) {
+        val byName = query.isNotBlank()
+        val term = (if (byName) query else dialled).trim()
+        // Un nom se cherche dès deux lettres — c'est le minimum qu'accepte le
+        // serveur. Un numéro attend trois chiffres : plus tôt, chaque touche du
+        // clavier partirait chercher une liste qui n'apprend rien.
+        if (term.length < (if (byName) 2 else 3)) {
             matches = emptyList()
             return
         }

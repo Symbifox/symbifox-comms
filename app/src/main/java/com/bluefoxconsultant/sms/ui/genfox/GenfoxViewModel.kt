@@ -39,6 +39,16 @@ class GenfoxViewModel : ViewModel() {
 
     private var pollJob: Job? = null
 
+    /**
+     * Vrai quand on a explicitement demandé une conversation neuve.
+     *
+     * ⚠️ Sans ce drapeau, le geste d'assistance arrive pendant que le
+     * `openLatest()` du constructeur vole encore, et la conversation d'hier
+     * atterrit PAR-DESSUS la neuve — une course qui ne se voit qu'un appareil
+     * lent ou un serveur qui traîne.
+     */
+    private var fresh = false
+
     init {
         openLatest()
     }
@@ -51,6 +61,7 @@ class GenfoxViewModel : ViewModel() {
             loading = true
             try {
                 sessions = Graph.genfox.sessions()
+                if (fresh) return@launch
                 val latest = sessions.firstOrNull()
                 if (latest == null) {
                     reset()
@@ -72,10 +83,14 @@ class GenfoxViewModel : ViewModel() {
     }
 
     fun open(id: Int) {
+        fresh = false
         viewModelScope.launch {
             loading = true
             try {
                 val resp = Graph.genfox.messages(id)
+                // La neuve a été demandée pendant l'aller-retour : ce résultat
+                // est périmé, l'écrire écraserait la conversation vide.
+                if (fresh) return@launch
                 sessionId = resp.sessionId
                 sessionName = resp.sessionName
                 messages = resp.messages
@@ -88,6 +103,18 @@ class GenfoxViewModel : ViewModel() {
                 loading = false
             }
         }
+    }
+
+    /**
+     * Une conversation neuve, demandée de l'extérieur — le geste d'assistance.
+     *
+     * Distinct de [reset] : celui-ci se contente de vider l'écran, alors que
+     * la neuve doit aussi tenir devant un `openLatest()` encore en vol.
+     */
+    fun startFresh() {
+        fresh = true
+        reset()
+        refreshSessions()
     }
 
     fun reset() {

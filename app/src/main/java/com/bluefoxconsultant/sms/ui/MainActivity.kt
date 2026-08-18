@@ -3,6 +3,7 @@ package com.bluefoxconsultant.sms.ui
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -49,6 +50,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.bluefoxconsultant.sms.assist.EXTRA_ASSIST
 import com.bluefoxconsultant.sms.data.Graph
 import com.bluefoxconsultant.sms.sip.SipEngine
 import com.bluefoxconsultant.sms.data.Service
@@ -81,6 +83,8 @@ class MainActivity : ComponentActivity() {
     private val pendingThread = mutableStateOf<Int?>(null)
     private val pendingMailThread = mutableStateOf<String?>(null)
     private val pendingGenfox = mutableStateOf<Int?>(null)
+    private val pendingAssist = mutableStateOf(false)
+    private val pendingDial = mutableStateOf<String?>(null)
 
     // Web-login redirect (com.bluefoxconsultant.sms://auth?code=&state=).
     private val pendingAuthUri = mutableStateOf<String?>(null)
@@ -94,7 +98,10 @@ class MainActivity : ComponentActivity() {
         requestNotificationPermission()
         setContent {
             BfSmsTheme {
-                AppRoot(pendingThread, pendingMailThread, pendingGenfox, pendingAuthUri)
+                AppRoot(
+                    pendingThread, pendingMailThread, pendingGenfox,
+                    pendingAssist, pendingDial, pendingAuthUri,
+                )
             }
         }
     }
@@ -112,6 +119,13 @@ class MainActivity : ComponentActivity() {
             pendingAuthUri.value = data.toString()
             return
         }
+        // tel: — le numéro est dans la partie spécifique au schéma, pas dans le
+        // chemin, et il arrive percent-encodé (le « + » d'un indicatif ressort
+        // « %2B »). Un DIAL nu, sans données, ouvre simplement le clavier.
+        if (intent.action == Intent.ACTION_DIAL || data?.scheme == "tel") {
+            pendingDial.value = data?.schemeSpecificPart?.let(Uri::decode).orEmpty()
+            return
+        }
         val threadId = intent.getIntExtra(Notifier.EXTRA_THREAD_ID, -1)
         if (threadId > 0) {
             pendingThread.value = threadId
@@ -123,13 +137,17 @@ class MainActivity : ComponentActivity() {
             pendingMailThread.value = intent.getStringExtra(Notifier.EXTRA_THREAD_KEY).orEmpty()
             return
         }
+        // Geste d'assistance du système. Distinct de la notification :
+        // celle-ci ramène à ce qui vient d'être répondu, alors que le geste
+        // veut dire « je te parle maintenant » — donc conversation neuve et
+        // micro ouvert, ce que l'écran fait sur ce seul drapeau.
+        if (intent.getBooleanExtra(EXTRA_ASSIST, false)) {
+            pendingAssist.value = true
+            return
+        }
         // The assistant finished a turn while the app was away.
         val genfoxSession = intent.getIntExtra(Notifier.EXTRA_GENFOX_SESSION, -1)
         if (genfoxSession > 0) pendingGenfox.value = genfoxSession
-        // Geste d'assistance du système : on ouvre GenFox sur sa dernière
-        // conversation. 0 vaut « l'onglet, sans conversation précise » — l'écran
-        // choisit alors la plus récente, qui est celle qu'on veut poursuivre.
-        if (intent.getBooleanExtra("bf_assist", false)) pendingGenfox.value = 0
     }
 
     private fun requestNotificationPermission() {
@@ -155,6 +173,8 @@ private fun AppRoot(
     pendingThread: MutableState<Int?>,
     pendingMailThread: MutableState<String?>,
     pendingGenfox: MutableState<Int?>,
+    pendingAssist: MutableState<Boolean>,
+    pendingDial: MutableState<String?>,
     pendingAuthUri: MutableState<String?>,
 ) {
     val nav = rememberNavController()
@@ -197,6 +217,8 @@ private fun AppRoot(
                 rootNav = nav,
                 pendingThread = pendingThread,
                 pendingGenfox = pendingGenfox,
+                pendingAssist = pendingAssist,
+                pendingDial = pendingDial,
                 pendingMailThread = pendingMailThread,
                 pendingAuthUri = pendingAuthUri,
             )
@@ -222,6 +244,8 @@ private fun HomeShell(
     pendingThread: MutableState<Int?>,
     pendingMailThread: MutableState<String?>,
     pendingGenfox: MutableState<Int?>,
+    pendingAssist: MutableState<Boolean>,
+    pendingDial: MutableState<String?>,
     pendingAuthUri: MutableState<String?>,
 ) {
     val tokenStore = Graph.tokenStore
@@ -295,6 +319,24 @@ private fun HomeShell(
         nav.navigate(Tabs.GENFOX) { launchSingleTop = true }
         pendingGenfox.value = null
     }
+    // Le geste d'assistance amène sur l'onglet ; l'écran, lui, ouvre la
+    // conversation neuve et le micro. Le drapeau n'est PAS consommé ici : c'est
+    // l'écran qui le fait, une fois qu'il a agi dessus.
+    LaunchedEffect(pendingAssist.value, genfox.enabled) {
+        if (!pendingAssist.value || !genfox.enabled) return@LaunchedEffect
+        nav.navigate(Tabs.GENFOX) { launchSingleTop = true }
+    }
+    // Un tel: n'a nulle part où aller tant que le poste n'est pas configuré :
+    // on garde le numéro plutôt que de l'effacer, l'onglet peut apparaître au
+    // retour du /config.
+    LaunchedEffect(pendingDial.value, phone.enabled) {
+        val number = pendingDial.value ?: return@LaunchedEffect
+        if (!phone.enabled) return@LaunchedEffect
+        nav.navigate(Tabs.PHONE) { launchSingleTop = true }
+        // « Composer », sans numéro : l'onglet suffit, il n'y a rien à consommer
+        // côté écran — et laisser le drapeau levé retiendrait le suivant.
+        if (number.isBlank()) pendingDial.value = null
+    }
     LaunchedEffect(pendingMailThread.value, tabs) {
         val key = pendingMailThread.value ?: return@LaunchedEffect
         if (Service.MAIL !in tabs) return@LaunchedEffect
@@ -332,8 +374,18 @@ private fun HomeShell(
                     },
                 )
             }
-            composable(Tabs.GENFOX) { GenfoxScreen() }
-            composable(Tabs.PHONE) { PhoneScreen() }
+            composable(Tabs.GENFOX) {
+                GenfoxScreen(
+                    assist = pendingAssist.value,
+                    onAssistConsumed = { pendingAssist.value = false },
+                )
+            }
+            composable(Tabs.PHONE) {
+                PhoneScreen(
+                    prefill = pendingDial.value?.takeIf { it.isNotBlank() },
+                    onPrefillConsumed = { pendingDial.value = null },
+                )
+            }
             composable(Tabs.ARCHIVED) {
                 ArchivedScreen(
                     onBack = { nav.popBackStack() },
