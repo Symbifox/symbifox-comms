@@ -73,6 +73,9 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.withStateAtLeast
 import com.bluefoxconsultant.sms.data.GenfoxMessage
 import com.bluefoxconsultant.sms.data.GenfoxTool
 import com.bluefoxconsultant.sms.ui.speech.DictateButton
@@ -138,9 +141,19 @@ fun GenfoxScreen(
     // Le geste d'assistance : conversation neuve, micro ouvert. Consommé tout
     // de suite, sinon un simple retour à l'onglet repartirait à zéro et
     // effacerait la question qu'on venait de poser.
+    //
+    // ⚠️ On ATTEND que la fenêtre soit RESUMED avant d'ouvrir le micro. Le
+    // geste d'assistance démarre l'app depuis un service, donc depuis
+    // l'arrière-plan, et Android refuse les permissions « pendant
+    // l'utilisation » — dont RECORD_AUDIO — tant qu'aucune activité visible ne
+    // les justifie. Le symptôme n'est PAS une erreur : l'enregistrement
+    // démarre, n'entend rien, et se solde trente secondes plus tard par
+    // « Rien entendu ». Ce qui se lit, à raison, comme « il ne m'écoute pas ».
+    val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(assist) {
         if (!assist) return@LaunchedEffect
         vm.startFresh()
+        lifecycleOwner.lifecycle.withStateAtLeast(Lifecycle.State.RESUMED) { }
         startHandsFree()
         onAssistConsumed()
     }

@@ -57,7 +57,10 @@ class HostingStore(private val repo: HostingRepository) {
                 // Les deux veulent dire « pas d'hébergement ici » : on garde le
                 // dernier état connu plutôt que d'éteindre la bannière sur un
                 // simple hoquet de réseau.
-                val next = runCatching { repo.alerts() }.getOrNull()
+                // Le réglage est relu à CHAQUE cycle plutôt que capturé au
+                // démarrage : le basculer dans les Paramètres doit se voir sans
+                // relancer l'app.
+                val next = runCatching { repo.alerts(kinds()) }.getOrNull()
                 if (next != null) {
                     _state.value = next
                     Notifier.showHosting(app, next)
@@ -66,6 +69,23 @@ class HostingStore(private val repo: HostingRepository) {
                 delay(if (_state.value.isDown) BUSY_MS else IDLE_MS)
             }
         }
+    }
+
+    /**
+     * Les genres demandés au serveur, d'après les Paramètres.
+     *
+     * Vide = tout. Sans les entretiens, on nomme les trois autres plutôt que
+     * d'exclure : un genre ajouté plus tard côté serveur n'apparaîtra pas tout
+     * seul dans une bannière que l'usager avait choisi de garder sobre.
+     */
+    private fun kinds(): List<String> =
+        if (Graph.uiPrefs.hostingMaintenance) emptyList()
+        else listOf("down", "storage", "backup")
+
+    /** Relit tout de suite — après un changement de réglage, l'attente serait longue. */
+    fun kick(context: Context) {
+        stop()
+        start(context)
     }
 
     fun stop() {

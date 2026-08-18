@@ -23,7 +23,18 @@ class HostingRepository(private val api: ApiClient) {
         api.ping(instance)
     }
 
-    suspend fun alerts(): HostingAlerts = withContext(Dispatchers.IO) {
-        api.json.decodeFromString(api.get("/alerts"))
-    }
+    /**
+     * [kinds] restreint ce que le serveur collecte ET résume.
+     *
+     * Le tri se fait là-bas, pas ici : « 2 services hors ligne, 1 disque
+     * plein » est une phrase accordée en français, et la filtrer côté app
+     * obligerait à réécrire cet accord en Kotlin — deux endroits à corriger le
+     * jour où la formulation change. Une liste vide vaut « tout », ce que le
+     * serveur comprend aussi comme l'absence du paramètre.
+     */
+    suspend fun alerts(kinds: List<String> = emptyList()): HostingAlerts =
+        withContext(Dispatchers.IO) {
+            val query = if (kinds.isEmpty()) "" else "?kinds=" + kinds.joinToString(",")
+            api.json.decodeFromString(api.get("/alerts$query"))
+        }
 }

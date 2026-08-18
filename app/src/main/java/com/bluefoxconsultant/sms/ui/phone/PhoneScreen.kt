@@ -247,57 +247,65 @@ fun PhoneScreen(
                 }
             }
 
-            Text(
-                text = vm.dialled.ifEmpty { "" },
-                fontSize = 30.sp,
-                fontWeight = FontWeight.Light,
-                maxLines = 1,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 6.dp),
-            )
-            HorizontalDivider()
             // ⚠️ Pendant un appel, une touche répond au menu d'en face ; elle
             // n'écrit pas un numéro. Même clavier, deux sens selon l'état.
             val surCetAppareil = sip.call?.established == true
             val enCommunication = surCetAppareil || vm.active.any { it.isUp }
-            Keypad(
-                onDigit = { key ->
-                    when {
-                        // Sur un appel porté ici, les touches partent par la
-                        // session SIP : passer par le PBX les jouerait dans une
-                        // jambe qui n'existe pas.
-                        surCetAppareil -> SipEngine.dtmf(key.toString())
-                        enCommunication -> vm.sendDtmf(key)
-                        else -> vm.press(key)
-                    }
-                },
-                onBackspace = vm::backspace,
-                onClear = { if (enCommunication) vm.clearDtmf() else vm.clear() },
-            )
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 18.dp),
-                horizontalArrangement = Arrangement.Center,
-            ) {
-                IconButton(
-                    onClick = { if (vm.callable) calling = true },
-                    enabled = vm.callable && !vm.placing && !enCommunication,
+
+            // Le bas de l'écran s'efface pendant une recherche par nom :
+            // douze touches qui ne servent à rien mangeaient la moitié de la
+            // hauteur, donc la moitié des résultats. Tout revient dès qu'un
+            // contact est choisi — le numéro est alors rempli, et c'est
+            // précisément le moment où le clavier redevient utile.
+            if (!searchOpen) {
+                Text(
+                    text = vm.dialled.ifEmpty { "" },
+                    fontSize = 30.sp,
+                    fontWeight = FontWeight.Light,
+                    maxLines = 1,
                     modifier = Modifier
-                        .size(64.dp)
-                        .background(
-                            if (vm.callable) CALL_GREEN
-                            else MaterialTheme.colorScheme.surfaceVariant,
-                            CircleShape,
-                        ),
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 6.dp),
+                )
+                HorizontalDivider()
+                Keypad(
+                    onDigit = { key ->
+                        when {
+                            // Sur un appel porté ici, les touches partent par la
+                            // session SIP : passer par le PBX les jouerait dans
+                            // une jambe qui n'existe pas.
+                            surCetAppareil -> SipEngine.dtmf(key.toString())
+                            enCommunication -> vm.sendDtmf(key)
+                            else -> vm.press(key)
+                        }
+                    },
+                    onBackspace = vm::backspace,
+                    onClear = { if (enCommunication) vm.clearDtmf() else vm.clear() },
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 18.dp),
+                    horizontalArrangement = Arrangement.Center,
                 ) {
-                    Icon(
-                        Icons.Filled.Call,
-                        contentDescription = "Appeler",
-                        tint = Color.White,
-                        modifier = Modifier.size(28.dp),
-                    )
+                    IconButton(
+                        onClick = { if (vm.callable) calling = true },
+                        enabled = vm.callable && !vm.placing && !enCommunication,
+                        modifier = Modifier
+                            .size(64.dp)
+                            .background(
+                                if (vm.callable) CALL_GREEN
+                                else MaterialTheme.colorScheme.surfaceVariant,
+                                CircleShape,
+                            ),
+                    ) {
+                        Icon(
+                            Icons.Filled.Call,
+                            contentDescription = "Appeler",
+                            tint = Color.White,
+                            modifier = Modifier.size(28.dp),
+                        )
+                    }
                 }
             }
         }

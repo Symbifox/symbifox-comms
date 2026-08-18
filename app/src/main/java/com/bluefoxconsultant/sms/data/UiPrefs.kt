@@ -92,6 +92,27 @@ class UiPrefs(context: Context) {
     val threadViewFlow: StateFlow<Boolean> = _threadView.asStateFlow()
     val threadView: Boolean get() = _threadView.value
 
+    /**
+     * Compter les entretiens en retard parmi les alertes d'hébergement.
+     *
+     * ⚠️ Faux par défaut, et c'est délibéré : le parc en porte des dizaines en
+     * permanence, donc les inclure allume la bannière en continu et lui retire
+     * tout pouvoir de dire « regarde MAINTENANT ». Une panne, un disque plein
+     * ou une sauvegarde en retard sont des faits ; un entretien dû est une
+     * intention. Les ralentissements, eux, restent toujours là — un service
+     * dégradé compte comme hors ligne côté serveur.
+     */
+    private val _hostingMaintenance = MutableStateFlow(
+        prefs.getBoolean(HOSTING_MAINTENANCE, false),
+    )
+    val hostingMaintenanceFlow: StateFlow<Boolean> = _hostingMaintenance.asStateFlow()
+    val hostingMaintenance: Boolean get() = _hostingMaintenance.value
+
+    fun setHostingMaintenance(enabled: Boolean) {
+        prefs.edit().putBoolean(HOSTING_MAINTENANCE, enabled).apply()
+        _hostingMaintenance.value = enabled
+    }
+
     private val _quick = MutableStateFlow(
         QuickAction.from(prefs.getStringSet(QUICK_ACTIONS, null)),
     )
@@ -136,5 +157,6 @@ class UiPrefs(context: Context) {
         const val SMS_END = "sms_end"
         const val THREAD_VIEW = "thread_view"
         const val QUICK_ACTIONS = "quick_actions"
+        const val HOSTING_MAINTENANCE = "hosting_maintenance"
     }
 }

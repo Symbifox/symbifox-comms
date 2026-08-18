@@ -22,6 +22,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -93,6 +94,7 @@ fun SettingsScreen(
             Spacer(Modifier.height(20.dp))
             SwipeSettings()
             QuickActionSettings()
+            HostingSettings()
             Button(
                 onClick = {
                     // Cached attachments are business documents; they must not
@@ -157,6 +159,52 @@ private fun InfoRow(label: String, value: String) {
  * Kept as a plain list of choices rather than a picker dialog: there are four
  * settings and four options, and a phone screen has room for them.
  */
+/**
+ * Ce que la bannière d'hébergement compte.
+ *
+ * N'apparaît que si le serveur sert l'hébergement à ce compte : un réglage
+ * pour une capacité qu'on n'a pas est du bruit dans un écran de préférences.
+ */
+@Composable
+private fun HostingSettings() {
+    val alerts by Graph.hostingStore.state.collectAsState()
+    if (!alerts.enabled) return
+    val prefs = Graph.uiPrefs
+    val withMaintenance by prefs.hostingMaintenanceFlow.collectAsState()
+    val context = LocalContext.current
+
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        SectionTitle("Hébergement")
+        Text(
+            "Par défaut, la bannière ne compte que ce qui est cassé : services "
+                + "hors ligne ou ralentis, disques pleins, sauvegardes en retard. "
+                + "Les entretiens dus sont une intention, pas une panne — et le "
+                + "parc en porte assez pour laisser la bannière allumée en "
+                + "permanence, ce qui lui retire tout pouvoir d'alerte.",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "Compter aussi les entretiens en retard",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+            )
+            Switch(
+                checked = withMaintenance,
+                onCheckedChange = {
+                    prefs.setHostingMaintenance(it)
+                    // Relire tout de suite : sinon le changement ne se voit
+                    // qu'au prochain cycle, et le réglage a l'air inopérant.
+                    Graph.hostingStore.kick(context)
+                },
+            )
+        }
+    }
+}
+
 @Composable
 private fun SwipeSettings() {
     val prefs = Graph.uiPrefs
