@@ -21,6 +21,14 @@ enum class MailFilter(val key: String, val label: String) {
     SENT("sent", "Envoyés"),
     UNROUTED("unrouted", "À router"),
     ALL("all", "Tous"),
+
+    /**
+     * ⚠️ Le seul filtre qui ne part JAMAIS au serveur : les brouillons vivent
+     * sur l'appareil, `bf_email` n'en a pas la notion. Toute nouvelle lecture
+     * doit donc l'écarter avant de composer une URL — sinon le serveur répond
+     * « Filtre inconnu ».
+     */
+    DRAFTS("drafts", "Brouillons"),
 }
 
 @Serializable

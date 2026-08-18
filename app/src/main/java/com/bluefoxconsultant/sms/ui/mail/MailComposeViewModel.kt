@@ -10,6 +10,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bluefoxconsultant.sms.data.Graph
 import com.bluefoxconsultant.sms.data.MailContact
+import com.bluefoxconsultant.sms.data.MailDraft
 import com.bluefoxconsultant.sms.data.PendingAction
 import com.bluefoxconsultant.sms.data.StagedUpload
 import com.bluefoxconsultant.sms.data.isOffline
@@ -31,7 +32,17 @@ import kotlinx.coroutines.withContext
 class MailComposeViewModel(
     val mode: String,
     private val emailId: Int,
+    resumed: String = "",
 ) : ViewModel() {
+
+    /**
+     * L'identité du brouillon de ce composeur.
+     *
+     * Attribuée dès l'ouverture, même pour un message neuf : elle doit être
+     * stable d'une sauvegarde à l'autre, sinon quitter l'écran deux fois
+     * laisserait deux brouillons du même texte.
+     */
+    private val draftId: String = resumed.ifBlank { PendingAction.newToken() }
 
     val isNew: Boolean get() = mode == "new"
     val needsRecipient: Boolean get() = isNew || mode == "forward"
@@ -107,6 +118,41 @@ class MailComposeViewModel(
      * in the correspondent's inbox.
      */
     private val clientToken = PendingAction.newToken()
+
+    init {
+        // Reprise d'un brouillon : on remet l'écran exactement là où il était.
+        // Les destinataires reviennent en pastilles et non dans le champ de
+        // saisie — ils étaient confirmés quand on a quitté, les retaper serait
+        // une occasion de plus de se tromper d'adresse.
+        Graph.drafts.get(draftId)?.let { draft ->
+            toChips = draft.to
+            ccChips = draft.cc
+            subject = draft.subject
+            body = draft.body
+            attachments = draft.attachments
+        }
+    }
+
+    /**
+     * Garde ce qui est écrit, au moment de quitter sans envoyer.
+     *
+     * Le magasin efface de lui-même un brouillon vidé : il n'y a donc rien à
+     * décider ici entre « enregistrer » et « supprimer », et un écran ouvert
+     * par erreur ne laisse pas de ligne à nettoyer. Rend vrai quand quelque
+     * chose a bel et bien été gardé, pour que l'écran puisse le dire.
+     */
+    fun saveDraft(): Boolean = Graph.drafts.save(
+        MailDraft(
+            id = draftId,
+            mode = mode,
+            emailId = emailId,
+            to = (toChips + splitAddresses(to)).distinct(),
+            cc = (ccChips + splitAddresses(cc)).distinct(),
+            subject = subject,
+            body = body,
+            attachments = attachments,
+        ),
+    ) != null
 
     /** Files already staged server-side, ready for the send to claim. */
     var attachments by mutableStateOf<List<StagedUpload>>(emptyList())
@@ -207,10 +253,14 @@ class MailComposeViewModel(
                         clientToken = clientToken,
                     )
                 }
+                Graph.drafts.delete(draftId)
                 onSent()
             } catch (e: Exception) {
                 if (e.isOffline()) {
                     queueForLater(recipients)
+                    // La file porte le message maintenant : garder le brouillon
+                    // en plus le ferait partir deux fois, une par chemin.
+                    Graph.drafts.delete(draftId)
                     onSent()
                 } else {
                     error = e.message?.takeIf { it.isNotBlank() && it != "error" }

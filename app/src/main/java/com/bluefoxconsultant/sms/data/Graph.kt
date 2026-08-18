@@ -72,6 +72,10 @@ object Graph {
     lateinit var outbox: MailOutbox
         private set
 
+    /** Les courriels commencés et pas envoyés — locaux à l'appareil. */
+    lateinit var drafts: MailDrafts
+        private set
+
     /** Colours taken from the connected instance; Symbifox until it answers. */
     lateinit var brandStore: BrandStore
         private set
@@ -110,6 +114,7 @@ object Graph {
         genfoxStore = GenfoxStore(genfox)
         mailCache = MailCache(context.applicationContext)
         outbox = MailOutbox(context.applicationContext)
+        drafts = MailDrafts(context.applicationContext)
         brandStore = BrandStore(context.applicationContext)
         uiPrefs = UiPrefs(context.applicationContext)
         initialized = true

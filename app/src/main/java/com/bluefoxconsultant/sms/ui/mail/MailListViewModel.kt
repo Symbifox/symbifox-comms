@@ -8,11 +8,13 @@ import androidx.lifecycle.viewModelScope
 import com.bluefoxconsultant.sms.data.Graph
 import com.bluefoxconsultant.sms.data.MailConfig
 import com.bluefoxconsultant.sms.data.MailCounts
+import com.bluefoxconsultant.sms.data.MailDraft
 import com.bluefoxconsultant.sms.data.MailFilter
 import com.bluefoxconsultant.sms.data.MailMessage
 import com.bluefoxconsultant.sms.data.PendingAction
 import com.bluefoxconsultant.sms.data.isOffline
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -64,6 +66,16 @@ class MailListViewModel : ViewModel() {
     /** Actions waiting to be replayed. */
     var queued by mutableStateOf(0)
         private set
+
+    /**
+     * Les brouillons de l'appareil, republiés à chaque écriture du magasin.
+     *
+     * ⚠️ Ils ne passent PAS par [threads] : ce ne sont pas des courriels du
+     * serveur, ils n'ont ni identifiant Odoo ni fil, et les faire entrer dans
+     * la même liste donnerait des gestes — archiver, reporter, router — qui
+     * n'ont aucun sens sur un texte que personne n'a encore reçu.
+     */
+    val drafts: StateFlow<List<MailDraft>> = Graph.drafts.drafts
 
     var searchActive by mutableStateOf(false)
         private set
@@ -146,6 +158,15 @@ class MailListViewModel : ViewModel() {
     }
 
     fun refresh() {
+        // Les brouillons sont déjà là : rien à demander, et le demander ferait
+        // répondre « Filtre inconnu » au serveur.
+        if (filter == MailFilter.DRAFTS) {
+            firstLoadDone = true
+            refreshing = false
+            hasMore = false
+            error = null
+            return
+        }
         viewModelScope.launch {
             refreshing = true
             error = null
@@ -201,7 +222,17 @@ class MailListViewModel : ViewModel() {
         viewModelScope.launch { flushQueue() }
     }
 
+    /** Dit ce que le composeur ne peut plus dire lui-même : il a déjà quitté. */
+    fun announceDraftSaved() {
+        notice = "Brouillon enregistré."
+    }
+
+    fun deleteDraft(draft: MailDraft) {
+        Graph.drafts.delete(draft.id)
+    }
+
     fun loadMore() {
+        if (filter == MailFilter.DRAFTS) return
         if (loadingMore || !hasMore || refreshing) return
         viewModelScope.launch {
             loadingMore = true

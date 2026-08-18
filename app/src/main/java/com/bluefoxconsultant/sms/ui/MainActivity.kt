@@ -418,6 +418,15 @@ private fun HomeShell(
                         nav.navigate("${Tabs.MAIL_THREAD}/${URLEncoder.encode(key, "UTF-8")}")
                     },
                     onCompose = { nav.navigate("${Tabs.MAIL_COMPOSE}/new/0") },
+                    // Reprendre un brouillon rouvre le composeur DANS SON MODE :
+                    // une réponse gardée doit repartir comme une réponse, pas
+                    // comme un message neuf qui perdrait le fil d'origine.
+                    onOpenDraft = { draft ->
+                        nav.navigate(
+                            "${Tabs.MAIL_COMPOSE}/${draft.mode}/${draft.emailId}" +
+                                "?draft=${URLEncoder.encode(draft.id, "UTF-8")}",
+                        )
+                    },
                     onSettings = { rootNav.navigate(Routes.SETTINGS) },
                     vm = vm,
                 )
@@ -440,16 +449,30 @@ private fun HomeShell(
                 )
             }
             composable(
-                route = "${Tabs.MAIL_COMPOSE}/{mode}/{emailId}",
+                route = "${Tabs.MAIL_COMPOSE}/{mode}/{emailId}?draft={draft}",
                 arguments = listOf(
                     navArgument("mode") { type = NavType.StringType },
                     navArgument("emailId") { type = NavType.IntType },
+                    navArgument("draft") {
+                        type = NavType.StringType
+                        defaultValue = ""
+                    },
                 ),
             ) { entry ->
+                // Le mot du brouillon gardé revient à la liste, seul écran
+                // encore là pour le dire — d'où le détour par son ViewModel.
+                val listEntry = remember(entry) { nav.getBackStackEntry(Tabs.MAIL) }
+                val listVm: MailListViewModel = viewModel(viewModelStoreOwner = listEntry)
+                val encodedDraft = entry.arguments?.getString("draft").orEmpty()
                 MailComposeScreen(
                     mode = entry.arguments?.getString("mode") ?: "new",
                     emailId = entry.arguments?.getInt("emailId") ?: 0,
-                    onBack = { nav.popBackStack() },
+                    draftId = runCatching { URLDecoder.decode(encodedDraft, "UTF-8") }
+                        .getOrDefault(encodedDraft),
+                    onBack = { saved ->
+                        nav.popBackStack()
+                        if (saved) listVm.announceDraftSaved()
+                    },
                     onSent = { nav.popBackStack() },
                 )
             }

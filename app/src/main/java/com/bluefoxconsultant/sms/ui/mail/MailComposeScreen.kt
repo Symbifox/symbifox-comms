@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -68,21 +69,27 @@ import com.bluefoxconsultant.sms.ui.theme.BrandAccent
 private class ComposeVmFactory(
     private val mode: String,
     private val emailId: Int,
+    private val draftId: String,
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        MailComposeViewModel(mode, emailId) as T
+        MailComposeViewModel(mode, emailId, draftId) as T
 }
 
+/**
+ * [onBack] reçoit vrai quand un brouillon a été gardé au passage : c'est la
+ * liste qui le dit, puisque cet écran a déjà disparu au moment de l'annoncer.
+ */
 @Composable
 fun MailComposeScreen(
     mode: String,
     emailId: Int,
-    onBack: () -> Unit,
+    draftId: String = "",
+    onBack: (Boolean) -> Unit,
     onSent: () -> Unit,
 ) {
     val vm: MailComposeViewModel = viewModel(
-        key = "$mode-$emailId",
-        factory = ComposeVmFactory(mode, emailId),
+        key = "$mode-$emailId-$draftId",
+        factory = ComposeVmFactory(mode, emailId, draftId),
     )
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
@@ -92,6 +99,13 @@ fun MailComposeScreen(
     val picker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris -> uris.forEach { vm.attach(context, it) } }
+
+    // Quitter, c'est mettre de côté — pas jeter. Le même chemin pour la
+    // flèche et pour le geste système : n'en câbler qu'un revient à perdre le
+    // texte par celui qu'on a oublié, qui est justement le plus utilisé.
+    fun leave() = onBack(vm.saveDraft())
+
+    BackHandler { leave() }
 
     LaunchedEffect(vm.queuedOffline) {
         if (vm.queuedOffline) {
@@ -112,7 +126,7 @@ fun MailComposeScreen(
             TopAppBar(
                 title = { Text(vm.title, fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = { leave() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
                     }
                 },

@@ -2,6 +2,7 @@
 
 package com.bluefoxconsultant.sms.ui.mail
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -29,6 +30,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Snooze
@@ -38,6 +40,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -68,6 +71,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
@@ -85,6 +90,8 @@ import androidx.compose.runtime.collectAsState
 import com.bluefoxconsultant.sms.data.Graph
 import com.bluefoxconsultant.sms.data.MailFilter
 import com.bluefoxconsultant.sms.data.SwipeAction
+import com.bluefoxconsultant.sms.ui.relativeTime
+import com.bluefoxconsultant.sms.data.MailDraft
 import com.bluefoxconsultant.sms.data.MailMessage
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
 
@@ -92,10 +99,12 @@ import com.bluefoxconsultant.sms.ui.theme.BrandAccent
 fun MailListScreen(
     onOpenThread: (String) -> Unit,
     onCompose: () -> Unit,
+    onOpenDraft: (MailDraft) -> Unit,
     onSettings: () -> Unit,
     vm: MailListViewModel = viewModel(),
 ) {
     val snackbar = remember { SnackbarHostState() }
+    val drafts by vm.drafts.collectAsStateWithLifecycle()
     var sheetFor by remember { mutableStateOf<MailMessage?>(null) }
     var routeFor by remember { mutableStateOf<MailMessage?>(null) }
     val listState = rememberLazyListState()
@@ -250,6 +259,7 @@ fun MailListScreen(
             FilterRow(
                 selected = vm.filter,
                 counts = vm.counts,
+                draftCount = drafts.size,
                 onSelect = vm::selectFilter,
             )
             HorizontalDivider()
@@ -259,6 +269,13 @@ fun MailListScreen(
                 modifier = Modifier.fillMaxSize(),
             ) {
                 when {
+                    // Les brouillons sont locaux : ni chargement, ni pagination,
+                    // ni gestes de tri — rien de ce que la liste du serveur fait.
+                    vm.filter == MailFilter.DRAFTS -> DraftList(
+                        drafts = drafts,
+                        onOpen = onOpenDraft,
+                        onDelete = vm::deleteDraft,
+                    )
                     !vm.firstLoadDone -> CenteredSpinner()
                     vm.threads.isEmpty() -> EmptyState(vm.filter, vm.searchTerm)
                     else -> LazyColumn(
@@ -529,10 +546,84 @@ private fun SwipeRow(
     )
 }
 
+/**
+ * Les brouillons de l'appareil.
+ *
+ * Deux gestes, et pas plus : reprendre, ou jeter. Tout ce que la liste du
+ * serveur sait faire — archiver, reporter, router vers un enregistrement —
+ * suppose un courriel qui existe quelque part ; celui-ci n'existe que là.
+ */
+@Composable
+private fun DraftList(
+    drafts: List<MailDraft>,
+    onOpen: (MailDraft) -> Unit,
+    onDelete: (MailDraft) -> Unit,
+) {
+    if (drafts.isEmpty()) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                "Aucun brouillon. Un courriel commencé et laissé en plan " +
+                    "atterrit ici plutôt que d'être perdu.",
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(32.dp),
+            )
+        }
+        return
+    }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 88.dp),
+    ) {
+        items(drafts, key = { it.id }) { draft ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onOpen(draft) }
+                    .padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        draft.label,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        draft.recipients,
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        listOf(draft.kindLabel, relativeTime(draft.savedMs))
+                            .filter { it.isNotBlank() }
+                            .joinToString(" · "),
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                IconButton(onClick = { onDelete(draft) }) {
+                    Icon(
+                        Icons.Filled.Delete,
+                        contentDescription = "Supprimer le brouillon",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            HorizontalDivider()
+        }
+    }
+}
+
 @Composable
 private fun FilterRow(
     selected: MailFilter,
     counts: com.bluefoxconsultant.sms.data.MailCounts,
+    draftCount: Int,
     onSelect: (MailFilter) -> Unit,
 ) {
     fun badge(filter: MailFilter): Int? = when (filter) {
@@ -540,6 +631,9 @@ private fun FilterRow(
         MailFilter.UNREAD -> counts.unread
         MailFilter.SNOOZED -> counts.snoozed
         MailFilter.UNROUTED -> counts.unrouted
+        // Compté sur l'appareil, pas dans les compteurs du serveur : c'est ce
+        // qui rend la pastille utile, un brouillon oublié se voit de loin.
+        MailFilter.DRAFTS -> draftCount
         else -> null
     }?.takeIf { it > 0 }
 
