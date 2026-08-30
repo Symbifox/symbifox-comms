@@ -95,7 +95,7 @@ class PushReceiver : MessagingReceiver() {
             // being open; this is what makes "ask and pocket the phone" work.
             "genfox" -> Notifier.showGenfox(
                 appContext,
-                str("title") ?: "GenFox",
+                str("title") ?: "Gen",
                 str("body").orEmpty(),
                 int("session_id") ?: 0,
             )

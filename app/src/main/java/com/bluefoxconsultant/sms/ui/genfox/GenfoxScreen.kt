@@ -185,7 +185,7 @@ fun GenfoxScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("GenFox", fontWeight = FontWeight.SemiBold, maxLines = 1)
+                        Text("Gen", fontWeight = FontWeight.SemiBold, maxLines = 1)
                         if (vm.sessionName.isNotBlank()) {
                             Text(
                                 vm.sessionName,
@@ -299,7 +299,7 @@ private fun EmptyState(modifier: Modifier = Modifier) {
         )
         Spacer(Modifier.size(8.dp))
         Text(
-            "Mêmes conversations et mêmes outils qu'au bureau : GenFox peut " +
+            "Mêmes conversations et mêmes outils qu'au bureau : Gen peut " +
                 "consulter comme modifier. La réponse s'écrit ici au fil de l'eau ; " +
                 "si vous rangez le téléphone, une notification vous préviendra.",
             fontSize = 13.sp,
@@ -473,7 +473,7 @@ private fun ThinkingDots(color: Color) {
             )
         }
         Spacer(Modifier.width(8.dp))
-        Text("GenFox travaille…", fontSize = 13.sp, color = color.copy(alpha = 0.75f))
+        Text("Gen travaille…", fontSize = 13.sp, color = color.copy(alpha = 0.75f))
     }
 }
 
@@ -552,7 +552,7 @@ private fun HandsFreeBand(state: HandsFreeState) {
     val label = when (state) {
         HandsFreeState.Listening -> "J'écoute — parlez, je m'arrête au silence"
         HandsFreeState.Sending -> "Transcription…"
-        HandsFreeState.Waiting -> "GenFox cherche…"
+        HandsFreeState.Waiting -> "Gen cherche…"
         HandsFreeState.Speaking -> "Réponse à voix haute…"
         HandsFreeState.Off -> ""
     }

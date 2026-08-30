@@ -156,7 +156,7 @@ object Notifier {
             // ago is worth a glance, not an interruption.
             val channel = NotificationChannel(
                 CHANNEL_GENFOX,
-                "GenFox",
+                "Gen",
                 NotificationManager.IMPORTANCE_DEFAULT,
             ).apply {
                 description = "Réponses de l'assistant"

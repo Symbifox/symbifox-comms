@@ -18,8 +18,8 @@ android {
         applicationId = "com.bluefoxconsultant.sms"
         minSdk = 26
         targetSdk = 34
-        versionCode = 34
-        versionName = "2.26.0"
+        versionCode = 35
+        versionName = "2.27.0"
     }
 
     signingConfigs {

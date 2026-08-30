@@ -511,7 +511,7 @@ private fun HomeShell(
                 add(Triple(Tabs.PHONE, "Téléphone", Icons.Filled.Dialpad))
             }
             if (genfox.enabled && tokens.isNotEmpty()) {
-                add(Triple(Tabs.GENFOX, "GenFox", Icons.Filled.AutoAwesome))
+                add(Triple(Tabs.GENFOX, "Gen", Icons.Filled.AutoAwesome))
             }
         }
         if (bottomTabs.size > 1 && onRoot) {
