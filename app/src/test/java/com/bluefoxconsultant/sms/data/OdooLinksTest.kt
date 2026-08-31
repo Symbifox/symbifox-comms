@@ -15,8 +15,8 @@ class OdooLinksTest {
     @Test
     fun `record url follows the odoo 18 form route`() {
         assertEquals(
-            "https://bluefoxconsultant.com/odoo/project.task/24556",
-            OdooLinks.recordUrl("https://bluefoxconsultant.com", "project.task", 24556),
+            "https://exemple.test/odoo/project.task/42",
+            OdooLinks.recordUrl("https://exemple.test", "project.task", 42),
         )
     }
 
