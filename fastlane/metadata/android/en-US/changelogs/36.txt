@@ -1,0 +1,5 @@
+* Comms now shows up in Android's Share sheet: send it a photo, a link or a file
+  from any app, then let it go out as a text (MMS) or as an email
+* Attachments on a new text message, up to three, resized to fit an MMS
+* The mailbox badges finally follow the list: they refresh on every reload and
+  count conversations rather than messages

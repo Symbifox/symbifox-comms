@@ -240,18 +240,23 @@ data class MailContactsResponse(val contacts: List<MailContact> = emptyList())
 @Serializable
 data class MailIdsRequest(
     @SerialName("email_ids") val emailIds: List<Int>,
+    // Le repli affiché, pour que les totaux renvoyés comptent des LIGNES et
+    // non des messages. Voir MailRepository.counts.
+    val grouped: Boolean = true,
 )
 
 @Serializable
 data class MailHandleRequest(
     @SerialName("email_ids") val emailIds: List<Int>,
     val handled: Boolean,
+    val grouped: Boolean = true,
 )
 
 @Serializable
 data class MailSnoozeRequest(
     @SerialName("email_ids") val emailIds: List<Int>,
     @SerialName("until_ms") val untilMs: Long,
+    val grouped: Boolean = true,
 )
 
 @Serializable

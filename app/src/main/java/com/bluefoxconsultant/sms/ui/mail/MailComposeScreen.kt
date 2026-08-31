@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.bluefoxconsultant.sms.data.SharedContent
 import com.bluefoxconsultant.sms.ui.speech.DictateButton
 import com.bluefoxconsultant.sms.ui.speech.appendSpoken
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
@@ -84,6 +85,8 @@ fun MailComposeScreen(
     mode: String,
     emailId: Int,
     draftId: String = "",
+    /** Ce qu'une autre app vient de partager, s'il y a lieu. */
+    shared: SharedContent? = null,
     onBack: (Boolean) -> Unit,
     onSent: () -> Unit,
 ) {
@@ -93,6 +96,12 @@ fun MailComposeScreen(
     )
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
+
+    // Une seule fois, sur le contenu lui-même : recomposer ne doit pas
+    // téléverser la pièce jointe une deuxième fois.
+    LaunchedEffect(shared) {
+        shared?.let { vm.adopt(context, it) }
+    }
     // OpenMultipleDocuments, not GetMultipleContents: it returns a durable,
     // readable URI for anything the system document picker can reach, which
     // GetContent does not guarantee across providers.

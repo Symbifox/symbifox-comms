@@ -136,6 +136,17 @@ class MailListViewModel : ViewModel() {
         }
     }
 
+    /**
+     * Le repli tel qu'il est affiché en ce moment.
+     *
+     * Il part avec CHAQUE lecture de totaux : le serveur compte des
+     * conversations quand la liste les replie, des messages quand elle est à
+     * plat. Envoyer le drapeau à `/threads` sans l'envoyer aux compteurs est
+     * exactement ce qui affichait « Boîte de réception · 6 » au-dessus de cinq
+     * lignes.
+     */
+    private val grouped: Boolean get() = Graph.uiPrefs.threadView
+
     private fun loadConfig() {
         // Paint from cache first so menus and badges exist before the network
         // answers — and still exist if it never does.
@@ -157,6 +168,26 @@ class MailListViewModel : ViewModel() {
         }
     }
 
+    /**
+     * Relit les pastilles, sans la page de courriels.
+     *
+     * ⚠️ C'est le correctif du napkin BF #25096. Les totaux ne descendaient
+     * qu'à la construction de ce ViewModel et dans la réponse d'une mutation
+     * faite DEPUIS l'app. Tout le reste — un courriel qui arrive, un ménage
+     * fait au navigateur, et surtout ouvrir un fil, ce qui marque lu côté
+     * serveur sans rien renvoyer — laissait la pastille figée, y compris après
+     * un tirer-pour-rafraîchir. Une capture montrait « Non lus · 5 » au-dessus
+     * d'une liste qui n'avait plus rien à lire.
+     *
+     * Silencieux à l'échec : une pastille qui date d'une minute est un moindre
+     * mal, et la liste, elle, a son propre message d'erreur.
+     */
+    private fun loadCounts() {
+        viewModelScope.launch {
+            runCatching { Graph.mail.counts(grouped) }.onSuccess { counts = it }
+        }
+    }
+
     fun refresh() {
         // Les brouillons sont déjà là : rien à demander, et le demander ferait
         // répondre « Filtre inconnu » au serveur.
@@ -175,13 +206,17 @@ class MailListViewModel : ViewModel() {
             // with the state from before the queued action and the row
             // reappeared — then vanished again once the flush landed.
             flushQueue()
+            // Lancés ensemble : les totaux ne dépendent pas de la page, et
+            // les enchaîner ajouterait un aller-retour au geste le plus
+            // fréquent de l'écran.
+            loadCounts()
             try {
                 val resp = Graph.mail.threads(
                     filter = filter,
                     search = searchTerm,
                     offset = 0,
                     limit = PAGE,
-                    grouped = Graph.uiPrefs.threadView,
+                    grouped = grouped,
                 )
                 threads = visible(resp.threads)
                 hasMore = resp.hasMore
@@ -242,7 +277,7 @@ class MailListViewModel : ViewModel() {
                     search = searchTerm,
                     offset = threads.size,
                     limit = PAGE,
-                    grouped = Graph.uiPrefs.threadView,
+                    grouped = grouped,
                 )
                 // Guard against a page that overlaps: a message arriving between
                 // two requests shifts every later row down by one, which would
@@ -307,7 +342,7 @@ class MailListViewModel : ViewModel() {
         offerUndo("Archivé") { restore(message) }
         viewModelScope.launch {
             try {
-                counts = Graph.mail.setHandled(listOf(message.id), handled = true)
+                counts = Graph.mail.setHandled(listOf(message.id), handled = true, grouped = grouped)
             } catch (e: Exception) {
                 if (e.isOffline()) queueHandle(message, handled = true)
                 else {
@@ -346,7 +381,7 @@ class MailListViewModel : ViewModel() {
         offerUndo("Reporté") { restore(message) }
         viewModelScope.launch {
             try {
-                counts = Graph.mail.snooze(listOf(message.id), untilMs)
+                counts = Graph.mail.snooze(listOf(message.id), untilMs, grouped = grouped)
             } catch (e: Exception) {
                 if (e.isOffline()) {
                     Graph.outbox.enqueue(
@@ -383,7 +418,7 @@ class MailListViewModel : ViewModel() {
         threads = threads.filterNot { it.threadKey == message.threadKey }
         viewModelScope.launch {
             try {
-                counts = Graph.mail.setHandled(listOf(message.id), handled = false)
+                counts = Graph.mail.setHandled(listOf(message.id), handled = false, grouped = grouped)
                 notice = "Remis en boîte de réception."
             } catch (e: Exception) {
                 if (e.isOffline()) queueHandle(message, handled = false)
@@ -399,7 +434,7 @@ class MailListViewModel : ViewModel() {
     fun markRead(message: MailMessage) {
         viewModelScope.launch {
             try {
-                counts = Graph.mail.markRead(listOf(message.id))
+                counts = Graph.mail.markRead(listOf(message.id), grouped = grouped)
                 threads = threads.map {
                     if (it.threadKey == message.threadKey) it.copy(status = "read", unreadCount = 0)
                     else it
@@ -536,7 +571,7 @@ class MailListViewModel : ViewModel() {
                 emailIds = targets.map { it.id },
                 handled = true,
             ),
-        ) { ids -> Graph.mail.setHandled(ids, handled = true) }
+        ) { ids -> Graph.mail.setHandled(ids, handled = true, grouped = grouped) }
     }
 
     fun restoreSelected() {
@@ -558,7 +593,8 @@ class MailListViewModel : ViewModel() {
         threads = threads.filterNot { it.threadKey in keys }
         viewModelScope.launch {
             try {
-                counts = Graph.mail.setHandled(targets.map { it.id }, handled = false)
+                counts = Graph.mail.setHandled(
+                    targets.map { it.id }, handled = false, grouped = grouped)
                 notice = plural(targets.size, "Remis en boîte de réception.",
                     "courriels remis en boîte de réception.")
             } catch (e: Exception) {
@@ -604,7 +640,7 @@ class MailListViewModel : ViewModel() {
                 createdMs = System.currentTimeMillis(),
                 emailIds = targets.map { it.id },
             ),
-        ) { ids -> Graph.mail.markRead(ids) }
+        ) { ids -> Graph.mail.markRead(ids, grouped = grouped) }
     }
 
     fun snoozeSelected(untilMs: Long) {
@@ -623,6 +659,6 @@ class MailListViewModel : ViewModel() {
                 emailIds = targets.map { it.id },
                 untilMs = untilMs,
             ),
-        ) { ids -> Graph.mail.snooze(ids, untilMs) }
+        ) { ids -> Graph.mail.snooze(ids, untilMs, grouped = grouped) }
     }
 }

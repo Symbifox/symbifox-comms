@@ -56,6 +56,8 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.bluefoxconsultant.sms.assist.EXTRA_ASSIST
 import com.bluefoxconsultant.sms.data.Graph
+import com.bluefoxconsultant.sms.data.ShareIntake
+import com.bluefoxconsultant.sms.data.SharedContent
 import com.bluefoxconsultant.sms.sip.SipEngine
 import com.bluefoxconsultant.sms.data.Service
 import com.bluefoxconsultant.sms.push.Notifier
@@ -71,6 +73,7 @@ import com.bluefoxconsultant.sms.ui.mail.MailListScreen
 import com.bluefoxconsultant.sms.ui.mail.MailListViewModel
 import com.bluefoxconsultant.sms.ui.mail.MailThreadScreen
 import com.bluefoxconsultant.sms.ui.settings.SettingsScreen
+import com.bluefoxconsultant.sms.ui.share.ShareScreen
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
 import com.bluefoxconsultant.sms.ui.theme.BfSmsTheme
 import com.bluefoxconsultant.sms.ui.threads.ArchivedScreen
@@ -90,6 +93,10 @@ class MainActivity : ComponentActivity() {
     private val pendingAssist = mutableStateOf(false)
     private val pendingDial = mutableStateOf<String?>(null)
 
+    // « Envoyer vers » depuis une autre app. Le contenu lui-même vit dans
+    // ShareIntake — voir là-bas pourquoi il ne voyage pas dans la route.
+    private val pendingShare = mutableStateOf<SharedContent?>(null)
+
     // Web-login redirect (com.bluefoxconsultant.sms://auth?code=&state=).
     private val pendingAuthUri = mutableStateOf<String?>(null)
 
@@ -104,7 +111,7 @@ class MainActivity : ComponentActivity() {
             BfSmsTheme {
                 AppRoot(
                     pendingThread, pendingMailThread, pendingGenfox,
-                    pendingAssist, pendingDial, pendingAuthUri,
+                    pendingAssist, pendingDial, pendingAuthUri, pendingShare,
                 )
             }
         }
@@ -118,6 +125,21 @@ class MainActivity : ComponentActivity() {
 
     private fun consumeIntent(intent: Intent?) {
         if (intent == null) return
+        // Le partage d'abord : une intention ACTION_SEND ne porte ni données
+        // ni extras de notification, mais elle arrive sur la même activité que
+        // tout le reste et doit être reconnue avant les tests qui suivent.
+        //
+        // ⚠️ Sauf en revenant par les RÉCENTS : Android y redélivre l'intention
+        // d'origine telle quelle, et sans ce test la photo partagée hier
+        // reviendrait s'offrir à chaque retour par la liste des applications.
+        // Le drapeau n'est examiné que pour le partage : les autres chemins
+        // (notification, tel:, assistance) gardent le comportement qu'ils ont.
+        val fromHistory = intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0
+        ShareIntake.from(intent)?.takeIf { !fromHistory }?.let {
+            ShareIntake.offer(it)
+            pendingShare.value = it
+            return
+        }
         val data = intent.data
         if (data != null && data.scheme == AUTH_SCHEME && data.host == AUTH_HOST) {
             pendingAuthUri.value = data.toString()
@@ -180,6 +202,7 @@ private fun AppRoot(
     pendingAssist: MutableState<Boolean>,
     pendingDial: MutableState<String?>,
     pendingAuthUri: MutableState<String?>,
+    pendingShare: MutableState<SharedContent?>,
 ) {
     val nav = rememberNavController()
     val tokenStore = Graph.tokenStore
@@ -225,6 +248,7 @@ private fun AppRoot(
                 pendingDial = pendingDial,
                 pendingMailThread = pendingMailThread,
                 pendingAuthUri = pendingAuthUri,
+                pendingShare = pendingShare,
             )
         }
         composable(Routes.SETTINGS) {
@@ -251,6 +275,7 @@ private fun HomeShell(
     pendingAssist: MutableState<Boolean>,
     pendingDial: MutableState<String?>,
     pendingAuthUri: MutableState<String?>,
+    pendingShare: MutableState<SharedContent?>,
 ) {
     val tokenStore = Graph.tokenStore
     val tokens by tokenStore.tokensFlow.collectAsState()
@@ -349,6 +374,22 @@ private fun HomeShell(
         // côté écran — et laisser le drapeau levé retiendrait le suivant.
         if (number.isBlank()) pendingDial.value = null
     }
+    // « Envoyer vers » : l'aiguillage attend de savoir quelles moitiés sont
+    // connectées. Sans les deux, l'écran de choix n'a rien à demander et on va
+    // droit au composeur ; sans aucune, on GARDE le partage — l'usager peut
+    // se connecter et le retrouver, plutôt que de le perdre en silence.
+    LaunchedEffect(pendingShare.value, tabs, tokens) {
+        pendingShare.value ?: return@LaunchedEffect
+        val canSms = tokens.containsKey(Service.SMS)
+        val canMail = tokens.containsKey(Service.MAIL)
+        when {
+            canSms && canMail -> nav.navigate(Tabs.SHARE)
+            canSms -> nav.navigate(Tabs.SMS_COMPOSE)
+            canMail -> openMailCompose(nav)
+            else -> return@LaunchedEffect
+        }
+        pendingShare.value = null
+    }
     LaunchedEffect(pendingMailThread.value, tabs) {
         val key = pendingMailThread.value ?: return@LaunchedEffect
         if (Service.MAIL !in tabs) return@LaunchedEffect
@@ -381,12 +422,46 @@ private fun HomeShell(
                 )
             }
             composable(Tabs.SMS_COMPOSE) {
+                // Pris à l'entrée sur l'écran, une fois : `remember` est lié à
+                // cette entrée de navigation, donc revenir plus tard sur un
+                // nouveau message n'y trouve plus rien.
+                val shared = remember { ShareIntake.take() }
                 ComposeScreen(
+                    shared = shared,
                     onBack = { nav.popBackStack() },
                     onSent = { id ->
                         nav.navigate("${Tabs.CONVERSATION}/$id") {
                             popUpTo(Tabs.SMS_COMPOSE) { inclusive = true }
                         }
+                    },
+                )
+            }
+            composable(Tabs.SHARE) {
+                val shared = ShareIntake.peek()
+                if (shared == null) {
+                    // Le partage a déjà été pris (retour arrière, rotation) :
+                    // rien à choisir, on ne laisse pas un écran vide.
+                    LaunchedEffect(Unit) { nav.popBackStack() }
+                    return@composable
+                }
+                ShareScreen(
+                    shared = shared,
+                    canSms = tokens.containsKey(Service.SMS),
+                    canMail = tokens.containsKey(Service.MAIL),
+                    onSms = {
+                        nav.navigate(Tabs.SMS_COMPOSE) {
+                            popUpTo(Tabs.SHARE) { inclusive = true }
+                        }
+                    },
+                    onMail = {
+                        openMailCompose(nav, clearing = Tabs.SHARE)
+                    },
+                    // ⚠️ Renoncer VIDE la réserve. Sans ça, le partage
+                    // abandonné referait surface dans le prochain message neuf
+                    // composé à la main, ce qui se lit comme un bug.
+                    onBack = {
+                        ShareIntake.clear()
+                        nav.popBackStack()
                     },
                 )
             }
@@ -480,9 +555,16 @@ private fun HomeShell(
                 val listEntry = remember(entry) { nav.getBackStackEntry(Tabs.MAIL) }
                 val listVm: MailListViewModel = viewModel(viewModelStoreOwner = listEntry)
                 val encodedDraft = entry.arguments?.getString("draft").orEmpty()
+                val mode = entry.arguments?.getString("mode") ?: "new"
+                // Une réponse ou un brouillon repris n'a rien à voir avec un
+                // partage : seul un message NEUF peut en adopter un.
+                val shared = remember(entry) {
+                    if (mode == "new" && encodedDraft.isBlank()) ShareIntake.take() else null
+                }
                 MailComposeScreen(
-                    mode = entry.arguments?.getString("mode") ?: "new",
+                    mode = mode,
                     emailId = entry.arguments?.getInt("emailId") ?: 0,
+                    shared = shared,
                     draftId = runCatching { URLDecoder.decode(encodedDraft, "UTF-8") }
                         .getOrDefault(encodedDraft),
                     onBack = { saved ->
@@ -633,6 +715,27 @@ private fun ConnectServicePane(
     }
 }
 
+/**
+ * Ouvre le composeur de courriel, **en passant par l'onglet**.
+ *
+ * 🔴 Le détour n'est pas cosmétique. L'écran du composeur va chercher le
+ * ViewModel de la LISTE avec `nav.getBackStackEntry(Tabs.MAIL)` — c'est par là
+ * qu'il annonce « brouillon enregistré » en repartant. Y aller directement
+ * depuis le partage, alors que l'onglet de départ est celui des messages,
+ * lèverait une IllegalArgumentException : la destination n'est pas sur la pile.
+ * L'app se ferme, sur un partage, donc au pire moment possible.
+ *
+ * Le passage par l'onglet donne aussi le retour qu'on attend : quitter le
+ * composeur ramène à la boîte de réception, pas à l'app d'où venait la photo.
+ */
+private fun openMailCompose(nav: NavHostController, clearing: String? = null) {
+    nav.navigate(Tabs.MAIL) {
+        launchSingleTop = true
+        clearing?.let { popUpTo(it) { inclusive = true } }
+    }
+    nav.navigate("${Tabs.MAIL_COMPOSE}/new/0")
+}
+
 private object Routes {
     const val INSTANCE = "instance"
     const val LOGIN = "login"
@@ -650,4 +753,5 @@ private object Tabs {
     const val MAIL_COMPOSE = "mail_compose"
     const val GENFOX = "genfox"
     const val PHONE = "phone"
+    const val SHARE = "share"
 }

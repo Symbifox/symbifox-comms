@@ -1,0 +1,8 @@
+* Comms apparaît dans « Partager » d'Android : une photo, un lien ou un fichier
+  peut lui être envoyé depuis n'importe quelle app, puis repartir en texto (MMS)
+  ou en courriel
+* Pièces jointes au nouveau message texte, jusqu'à trois, redimensionnées pour
+  passer en MMS
+* Les totaux au-dessus de la boîte de réception suivent enfin la liste : ils se
+  rafraîchissent à chaque relecture et comptent des conversations, plus des
+  messages

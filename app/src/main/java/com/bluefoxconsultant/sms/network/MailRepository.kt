@@ -78,25 +78,59 @@ class MailRepository(private val api: ApiClient) {
         api.getBytes("/attachment?email_id=$emailId&idx=$idx")
     }
 
-    // ---- triage ----
-
-    suspend fun markRead(emailIds: List<Int>): MailCounts = withContext(Dispatchers.IO) {
+    /**
+     * Les pastilles, seules.
+     *
+     * ⚠️ Sans cette route, les totaux ne descendaient qu'à l'ouverture de
+     * l'écran (`/config`) et dans la réponse d'une mutation faite ICI. Un
+     * courriel qui arrive, un ménage fait au navigateur, ou simplement ouvrir
+     * un fil — ce qui marque lu côté serveur — les laissaient figés, et tirer
+     * pour rafraîchir ne les touchait pas. D'où « Non lus · 5 » au-dessus
+     * d'une liste sans rien à lire.
+     *
+     * [grouped] doit valoir ce que la liste affiche : le serveur compte des
+     * conversations quand elles sont repliées, des messages sinon.
+     */
+    suspend fun counts(grouped: Boolean): MailCounts = withContext(Dispatchers.IO) {
         json.decodeFromString<MailCountsResponse>(
-            api.postJson("/mark_read", json.encodeToString(MailIdsRequest(emailIds))),
+            api.get("/counts?grouped=${if (grouped) 1 else 0}"),
         ).counts
     }
 
-    suspend fun setHandled(emailIds: List<Int>, handled: Boolean): MailCounts =
+    // ---- triage ----
+
+    suspend fun markRead(emailIds: List<Int>, grouped: Boolean = true): MailCounts =
         withContext(Dispatchers.IO) {
             json.decodeFromString<MailCountsResponse>(
-                api.postJson("/handle", json.encodeToString(MailHandleRequest(emailIds, handled))),
+                api.postJson("/mark_read", json.encodeToString(MailIdsRequest(emailIds, grouped))),
             ).counts
         }
 
-    suspend fun snooze(emailIds: List<Int>, untilMs: Long): MailCounts =
+    suspend fun setHandled(
+        emailIds: List<Int>,
+        handled: Boolean,
+        grouped: Boolean = true,
+    ): MailCounts =
         withContext(Dispatchers.IO) {
             json.decodeFromString<MailCountsResponse>(
-                api.postJson("/snooze", json.encodeToString(MailSnoozeRequest(emailIds, untilMs))),
+                api.postJson(
+                    "/handle",
+                    json.encodeToString(MailHandleRequest(emailIds, handled, grouped)),
+                ),
+            ).counts
+        }
+
+    suspend fun snooze(
+        emailIds: List<Int>,
+        untilMs: Long,
+        grouped: Boolean = true,
+    ): MailCounts =
+        withContext(Dispatchers.IO) {
+            json.decodeFromString<MailCountsResponse>(
+                api.postJson(
+                    "/snooze",
+                    json.encodeToString(MailSnoozeRequest(emailIds, untilMs, grouped)),
+                ),
             ).counts
         }
 

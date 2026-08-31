@@ -8,6 +8,7 @@ import com.bluefoxconsultant.sms.data.ExchangeRequest
 import com.bluefoxconsultant.sms.data.LoginResponse
 import com.bluefoxconsultant.sms.data.MarkReadRequest
 import com.bluefoxconsultant.sms.data.PinResponse
+import com.bluefoxconsultant.sms.data.SendMedia
 import com.bluefoxconsultant.sms.data.SendNewRequest
 import com.bluefoxconsultant.sms.data.SendResponse
 import com.bluefoxconsultant.sms.data.SendThreadRequest
@@ -68,16 +69,34 @@ class Repository(private val api: ApiClient) {
             json.decodeFromString(api.get("/conversation?thread_id=$threadId$before"))
         }
 
-    suspend fun send(threadId: Int, body: String, lineId: Int? = null): SendResponse =
+    suspend fun send(
+        threadId: Int,
+        body: String,
+        lineId: Int? = null,
+        media: List<SendMedia>? = null,
+    ): SendResponse =
         withContext(Dispatchers.IO) {
             json.decodeFromString(
-                api.postJson("/send", json.encodeToString(SendThreadRequest(threadId, body, lineId))),
+                api.postJson(
+                    "/send",
+                    json.encodeToString(SendThreadRequest(threadId, body, lineId, media)),
+                ),
             )
         }
 
-    suspend fun sendNew(phone: String, lineId: Int, body: String): SendResponse =
+    suspend fun sendNew(
+        phone: String,
+        lineId: Int,
+        body: String,
+        media: List<SendMedia>? = null,
+    ): SendResponse =
         withContext(Dispatchers.IO) {
-            json.decodeFromString(api.postJson("/send", json.encodeToString(SendNewRequest(phone, lineId, body))))
+            json.decodeFromString(
+                api.postJson(
+                    "/send",
+                    json.encodeToString(SendNewRequest(phone, lineId, body, media)),
+                ),
+            )
         }
 
     suspend fun markRead(threadId: Int) = withContext(Dispatchers.IO) {

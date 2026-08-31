@@ -73,6 +73,27 @@
                 <category android:name="android.intent.category.DEFAULT"/>
             </intent-filter>
 
+            <!-- « Envoyer vers » : Comms devient une destination du partage
+                 Android. Deux types déclarés et pas un seul : text/plain porte
+                 un lien ou une sélection, et */* couvre tout le reste — photo,
+                 PDF, capture d'écran. Ce qui arrive ici peut repartir en texto
+                 (MMS) ou en courriel, c'est l'écran de choix qui tranche.
+                 ⚠️ ACTION_SEND_MULTIPLE doit être déclaré à part : partager
+                 trois photos n'envoie PAS trois ACTION_SEND, et sans ce filtre
+                 l'app disparaît du sélecteur dès qu'on en coche une deuxième —
+                 en silence, ce qui se lit comme un partage capricieux. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="text/plain"/>
+                <data android:mimeType="*/*"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="*/*"/>
+            </intent-filter>
+
             <!-- Web-login capture deep link: com.bluefoxconsultant.sms://auth?code=&state= -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>

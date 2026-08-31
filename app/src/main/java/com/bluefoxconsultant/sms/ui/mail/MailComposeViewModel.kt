@@ -12,6 +12,7 @@ import com.bluefoxconsultant.sms.data.Graph
 import com.bluefoxconsultant.sms.data.MailContact
 import com.bluefoxconsultant.sms.data.MailDraft
 import com.bluefoxconsultant.sms.data.PendingAction
+import com.bluefoxconsultant.sms.data.SharedContent
 import com.bluefoxconsultant.sms.data.StagedUpload
 import com.bluefoxconsultant.sms.data.isOffline
 import kotlinx.coroutines.Dispatchers
@@ -153,6 +154,26 @@ class MailComposeViewModel(
             attachments = attachments,
         ),
     ) != null
+
+    /**
+     * Reprend ce qu'une autre app vient de partager vers Comms.
+     *
+     * L'objet du partage devient l'objet du courriel — c'est exactement ce
+     * qu'`EXTRA_SUBJECT` veut dire — et le texte, souvent un lien, le corps.
+     * Les fichiers passent par [attach], donc par le téléversement normal :
+     * une pièce jointe partagée n'a aucune raison d'emprunter un autre chemin
+     * que celle choisie au trombone.
+     *
+     * ⚠️ N'écrase rien : reprendre un brouillon puis recevoir un partage ne
+     * doit pas effacer ce qui était déjà écrit.
+     */
+    fun adopt(context: Context, shared: SharedContent) {
+        if (subject.isBlank()) subject = shared.subject
+        if (shared.text.isNotBlank()) {
+            body = if (body.isBlank()) shared.text else body + "\n\n" + shared.text
+        }
+        shared.uris.forEach { attach(context, it) }
+    }
 
     /** Files already staged server-side, ready for the send to claim. */
     var attachments by mutableStateOf<List<StagedUpload>>(emptyList())

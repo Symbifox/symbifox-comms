@@ -133,6 +133,9 @@ data class SendThreadRequest(
     // Omitted when null (explicitNulls = false), and the server then resolves
     // the line from the thread's last message — the historical behaviour.
     @SerialName("line_id") val lineId: Int? = null,
+    // Absent = SMS. Présent = MMS : c'est le serveur qui bascule, l'app ne
+    // choisit pas de canal.
+    val media: List<SendMedia>? = null,
 )
 
 @Serializable
@@ -140,6 +143,22 @@ data class SendNewRequest(
     val phone: String,
     @SerialName("line_id") val lineId: Int,
     val body: String,
+    val media: List<SendMedia>? = null,
+)
+
+/**
+ * Une pièce jointe sortante, telle que `/send` l'attend.
+ *
+ * Base64 et non multipart : `action_send` en fait un `data:` URI pour
+ * `sendMMS` chez VOIP.ms, donc l'encodage arriverait de toute façon — et les
+ * plafonds (1 Mo la pièce, trois pièces) rendent le tiers de surcoût sans
+ * conséquence ici, contrairement au courriel qui, lui, téléverse en multipart.
+ */
+@Serializable
+data class SendMedia(
+    val filename: String,
+    @SerialName("content_type") val contentType: String,
+    @SerialName("data_b64") val dataB64: String,
 )
 
 @Serializable

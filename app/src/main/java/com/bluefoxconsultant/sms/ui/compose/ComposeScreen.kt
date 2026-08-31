@@ -2,7 +2,10 @@
 
 package com.bluefoxconsultant.sms.ui.compose
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +21,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
@@ -37,6 +43,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,12 +51,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bluefoxconsultant.sms.data.Contact
+import com.bluefoxconsultant.sms.data.MediaPrep
+import com.bluefoxconsultant.sms.data.OutgoingMedia
+import com.bluefoxconsultant.sms.data.SharedContent
 import com.bluefoxconsultant.sms.ui.phone.CallAction
 import com.bluefoxconsultant.sms.ui.speech.DictateButton
 import com.bluefoxconsultant.sms.ui.speech.appendSpoken
@@ -59,9 +70,25 @@ import com.bluefoxconsultant.sms.ui.theme.BrandAccent
 fun ComposeScreen(
     onBack: () -> Unit,
     onSent: (Int) -> Unit,
+    /** Ce qu'une autre app vient de partager, s'il y a lieu. */
+    shared: SharedContent? = null,
     vm: ComposeViewModel = viewModel(),
 ) {
     val snackbar = remember { SnackbarHostState() }
+    val context = LocalContext.current
+
+    // Une seule fois, sur le contenu lui-même : recomposer ne doit pas
+    // rejoindre la photo une deuxième fois.
+    LaunchedEffect(shared) {
+        shared?.let { vm.adopt(context, it) }
+    }
+
+    // OpenMultipleDocuments plutôt que GetMultipleContents : l'URI rendue est
+    // lisible quel que soit le fournisseur, ce que GetContent ne garantit pas.
+    val picker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris -> uris.forEach { vm.attach(context, it) } }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
@@ -146,10 +173,41 @@ fun ComposeScreen(
                 },
             )
 
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // ⚠️ Grisé, jamais caché, quand la ligne ne fait pas de MMS :
+                // un bouton absent laisserait croire que l'app ne sait pas
+                // joindre de fichier, alors que c'est la LIGNE qui ne peut pas.
+                IconButton(
+                    onClick = { picker.launch(arrayOf("*/*")) },
+                    enabled = vm.lineDoesMms && vm.canAttachMore,
+                ) {
+                    Icon(Icons.Filled.AttachFile, contentDescription = "Joindre un fichier")
+                }
+                Text(
+                    when {
+                        !vm.lineDoesMms -> "Cette ligne n'envoie pas de MMS."
+                        vm.attachments.isEmpty() ->
+                            "Jusqu'à ${MediaPrep.MAX_PARTS} pièces jointes (MMS)."
+                        else -> "MMS · ${vm.attachments.size}/${MediaPrep.MAX_PARTS}"
+                    },
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            if (vm.attachments.isNotEmpty() || vm.preparing > 0) {
+                MediaChips(
+                    attachments = vm.attachments,
+                    preparing = vm.preparing,
+                    onRemove = vm::removeAttachment,
+                )
+            }
+
             Spacer(Modifier.height(20.dp))
             Button(
                 onClick = { vm.send(onSent) },
-                enabled = !vm.sending,
+                enabled = !vm.sending && vm.preparing == 0,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp),
@@ -229,4 +287,55 @@ private fun SuggestionRow(contact: Contact, onClick: () -> Unit) {
             }
         }
     }
+}
+
+/**
+ * Les pièces jointes du MMS, avec leur poids APRÈS mise au gabarit.
+ *
+ * Le poids affiché est celui qui partira réellement : une photo de 4 Mo
+ * ressort à quelques centaines de kilo-octets, et montrer le poids d'origine
+ * ferait craindre un refus qui n'arrivera pas.
+ */
+@Composable
+private fun MediaChips(
+    attachments: List<OutgoingMedia>,
+    preparing: Int,
+    onRemove: (OutgoingMedia) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        attachments.forEach { media ->
+            AssistChip(
+                onClick = { onRemove(media) },
+                label = {
+                    Text("${media.filename} · ${humanSize(media.sizeBytes)}", fontSize = 12.sp)
+                },
+                leadingIcon = { Icon(Icons.Filled.AttachFile, null, Modifier.size(16.dp)) },
+                trailingIcon = { Icon(Icons.Filled.Close, "Retirer", Modifier.size(16.dp)) },
+                modifier = Modifier.padding(end = 8.dp),
+            )
+        }
+        repeat(preparing) {
+            AssistChip(
+                onClick = {},
+                enabled = false,
+                label = { Text("Préparation…", fontSize = 12.sp) },
+                leadingIcon = {
+                    CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                },
+                modifier = Modifier.padding(end = 8.dp),
+            )
+        }
+    }
+}
+
+private fun humanSize(bytes: Int): String = when {
+    bytes >= 1_048_576 -> "%.1f Mo".format(bytes / 1_048_576.0)
+    bytes >= 1024 -> "%d ko".format(bytes / 1024)
+    else -> "$bytes o"
 }
