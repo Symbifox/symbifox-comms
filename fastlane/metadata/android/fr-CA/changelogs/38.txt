@@ -4,3 +4,10 @@
   consignée au dépôt, et son empreinte est écrite noir sur blanc. Ce qui tourne
   sur le téléphone peut donc être vérifié par n'importe qui. Le fichier livré
   jusqu'ici ne correspondait à aucune version publiée de JsSIP
+* L'app dit maintenant quand Android l'empêche de sonner. Depuis Android 14,
+  l'écran d'appel ne peut monter par-dessus le verrouillage que si la
+  permission « notifications plein écran » est accordée, et elle ne l'est plus
+  d'office. Sans elle, le téléphone recevait l'appel sans jamais le montrer.
+  Un bandeau le dit et mène droit au réglage
+* Même chose pour la mise en pause automatique : une app qu'Android endort
+  faute d'usage ne reçoit plus rien du tout, sans erreur nulle part

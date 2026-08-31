@@ -4,3 +4,10 @@
   repository, and its checksum is written down, so what runs on the phone can
   be verified by anyone. The file shipped until now matched no published JsSIP
   release
+* The app now says when Android is stopping it from ringing. Since Android 14
+  the call screen can only rise over the lock screen if the "full screen
+  notifications" permission is granted, and it is no longer granted by default.
+  Without it the phone received the call and never showed it. A banner says so
+  and leads straight to the setting
+* Same for automatic hibernation: an app Android pauses for lack of use stops
+  receiving anything at all, with no error anywhere

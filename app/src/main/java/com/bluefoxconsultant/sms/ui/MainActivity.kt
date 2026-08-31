@@ -58,6 +58,9 @@ import com.bluefoxconsultant.sms.assist.EXTRA_ASSIST
 import com.bluefoxconsultant.sms.data.Graph
 import com.bluefoxconsultant.sms.data.ShareIntake
 import com.bluefoxconsultant.sms.data.SharedContent
+import com.bluefoxconsultant.sms.sip.CallGap
+import com.bluefoxconsultant.sms.sip.rememberCallGaps
+import com.bluefoxconsultant.sms.sip.settingsIntentFor
 import com.bluefoxconsultant.sms.sip.SipEngine
 import com.bluefoxconsultant.sms.data.Service
 import com.bluefoxconsultant.sms.push.Notifier
@@ -331,6 +334,7 @@ private fun HomeShell(
     // pas d'onglet à elle, et le serveur dit lui-même quand s'arrêter (l'usager
     // n'a pas l'hébergement). Elle survit au changement d'onglet, comme le poste.
     val hosting by Graph.hostingStore.state.collectAsStateWithLifecycle()
+    val callGaps = rememberCallGaps()
     LaunchedEffect(tokens.isNotEmpty()) {
         if (tokens.isNotEmpty()) Graph.hostingStore.start(context)
     }
@@ -408,6 +412,13 @@ private fun HomeShell(
         // dans une section. Sur un écran de détail aussi — c'est justement en
         // lisant autre chose qu'on veut l'apprendre.
         if (hosting.enabled && hosting.hasAny) HostingBanner(hosting)
+        // Le poste peut très bien recevoir le push et ne pas sonner pour
+        // autant. Montrée seulement quand le compte A un poste : prévenir
+        // quelqu'un qui ne reçoit pas d'appels de toute façon serait du bruit.
+        // Un seul manque à la fois, le plus grave d'abord.
+        if (phone.enabled && phone.extension.isNotBlank()) {
+            callGaps.firstOrNull()?.let { CallGapBanner(it) }
+        }
         NavHost(
             navController = nav,
             startDestination = startTab,
@@ -656,6 +667,50 @@ private fun HostingBanner(alerts: com.bluefoxconsultant.sms.data.HostingAlerts) 
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * Ce qui empêche le combiné de sonner, et le réglage qui le débloque.
+ *
+ * Rouge pour l'intention plein écran : sans elle l'écran d'appel ne monte
+ * jamais, donc les appels sont manqués aujourd'hui. Ambre pour l'hibernation :
+ * tout marche, mais Android peut l'éteindre après des mois sans usage. Tout
+ * peindre en rouge finit par rendre le rouge illisible.
+ */
+@Composable
+private fun CallGapBanner(gap: CallGap) {
+    val context = LocalContext.current
+    val down = gap == CallGap.FULL_SCREEN
+    Surface(color = if (down) AlertRed else AlertAmber) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable {
+                    runCatching { context.startActivity(settingsIntentFor(context, gap)) }
+                }
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+        ) {
+            Text(
+                if (down) "Les appels ne sonneront pas"
+                else "Les appels peuvent cesser de sonner",
+                color = Color.White,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                if (down) {
+                    "Android n'autorise pas l'écran d'appel par-dessus le " +
+                        "verrouillage. Toucher pour l'autoriser."
+                } else {
+                    "Android met l'app en pause si elle reste inutilisée, et " +
+                        "plus rien ne lui parvient. Toucher pour l'en exempter."
+                },
+                color = Color.White.copy(alpha = 0.9f),
+                fontSize = 12.sp,
+                modifier = Modifier.padding(top = 3.dp),
+            )
         }
     }
 }
