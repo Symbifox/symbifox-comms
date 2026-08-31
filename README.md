@@ -74,6 +74,16 @@ Requires JDK 17 and the Android SDK (compileSdk 34).
 how release builds are produced. Signing credentials are read from
 `signing.env`, which is not in this repository.
 
+The one third-party asset in the tree, the JsSIP bundle the softphone loads, is
+generated rather than hand-placed:
+
+```
+./tools/build-jssip.sh
+```
+
+It is reproducible and its checksum is recorded in
+[THIRD_PARTY.md](THIRD_PARTY.md). Only re-run it to change the JsSIP version.
+
 Unit tests:
 
 ```
@@ -91,3 +101,6 @@ GPL-3.0-or-later. See [LICENSE](LICENSE).
 
 The Odoo modules this app talks to are separate programs under a separate
 licence, as noted above.
+
+Third-party code shipped inside the app, and how to reproduce it, is listed in
+[THIRD_PARTY.md](THIRD_PARTY.md).

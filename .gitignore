@@ -15,3 +15,6 @@ PLAN_ODOO_INBOX.md
 README_INSTALLATION.md
 .kotlin/
 API_CONTRACT.md
+
+# Bâti par tools/build-jssip.sh, jamais à la main.
+tools/jssip/node_modules/

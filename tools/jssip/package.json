@@ -1,0 +1,12 @@
+{
+  "name": "symbifox-comms-jssip-bundle",
+  "private": true,
+  "description": "Bâtit le paquet JsSIP servi au WebView, depuis une version publiée.",
+  "license": "GPL-3.0-or-later",
+  "dependencies": {
+    "jssip": "3.13.8"
+  },
+  "devDependencies": {
+    "esbuild": "0.27.2"
+  }
+}

@@ -1,0 +1,6 @@
+* The handset's SIP stack moves from JsSIP 3.11.1 to 3.13.8, eight months of
+  upstream fixes to the code that parses whatever arrives from the network
+* That stack is now built from a published release by a command kept in the
+  repository, and its checksum is written down, so what runs on the phone can
+  be verified by anyone. The file shipped until now matched no published JsSIP
+  release
