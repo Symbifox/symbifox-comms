@@ -64,6 +64,15 @@ object SipEngine {
     private var proximite: PowerManager.WakeLock? = null
     /** Numéro à composer dès que l'enregistrement aboutit. */
     private var queuedNumber: String? = null
+    /**
+     * « Répondre » pressé AVANT que l'appel arrive.
+     *
+     * Le réveil par push retourne l'ordre habituel : la notification est
+     * dessinée quand le PBX prévient, donc plusieurs secondes avant l'INVITE.
+     * Sans ça, décrocher depuis l'écran de sonnerie ne ferait rien, et il
+     * faudrait décrocher une deuxième fois quand le téléphone sonne pour de bon.
+     */
+    private var autoAnswer = false
 
     private val _state = MutableStateFlow(SipState())
     val state: StateFlow<SipState> = _state.asStateFlow()
@@ -112,7 +121,24 @@ object SipEngine {
         }
     }
 
-    fun answer() = js("BFPhone.answer()")
+    fun answer() {
+        autoAnswer = false
+        js("BFPhone.answer()")
+    }
+
+    /**
+     * Décroche l'appel entrant — ou le décrochera dès qu'il arrive.
+     *
+     * Utilisé par l'écran de sonnerie ouvert par le réveil par push, où le
+     * geste précède l'INVITE. Sans appel en vue, l'intention est retenue.
+     */
+    fun answerWhenReady() {
+        if (_state.value.call?.incoming == true) answer() else autoAnswer = true
+    }
+
+    fun cancelAutoAnswer() {
+        autoAnswer = false
+    }
 
     fun hangup() = js("BFPhone.hangup()")
 
@@ -291,6 +317,7 @@ object SipEngine {
                         established = false,
                     ),
                 )
+                if (autoAnswer && o.optString("type") == "incoming") answer()
             }
             "established" -> {
                 // Seulement une fois décroché : éteindre l'écran pendant que ça
@@ -305,6 +332,7 @@ object SipEngine {
                 )
             }
             "ended" -> {
+                autoAnswer = false
                 releaseAudio()
                 releaseProximity()
                 app?.let { CallService.stop(it) }

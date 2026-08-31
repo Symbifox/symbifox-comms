@@ -7,16 +7,24 @@ import org.unifiedpush.android.connector.UnifiedPush
 /** Picks a UnifiedPush distributor and registers the app after login. */
 object PushRegistrar {
 
-    fun register(context: Context) {
+    /**
+     * @param quiet réaffirmation au démarrage : elle ne dit rien.
+     *   Le conseil d'installer ntfy a sa place juste après une connexion, où
+     *   l'utilisateur vient d'agir ; répété à chaque lancement, il devient du
+     *   bruit qu'on apprend à ignorer.
+     */
+    fun register(context: Context, quiet: Boolean = false) {
         val app = context.applicationContext
         try {
             val distributors = UnifiedPush.getDistributors(app)
             if (distributors.isEmpty()) {
-                Toast.makeText(
-                    app,
-                    "Installez/activez l'app ntfy pour les notifications",
-                    Toast.LENGTH_LONG,
-                ).show()
+                if (!quiet) {
+                    Toast.makeText(
+                        app,
+                        "Installez/activez l'app ntfy pour les notifications",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
                 return
             }
             UnifiedPush.saveDistributor(app, distributors.first())

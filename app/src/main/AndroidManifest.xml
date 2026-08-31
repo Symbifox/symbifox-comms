@@ -19,6 +19,18 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
 
+    <!-- Réveil par push : faire sonner le poste alors que l'app est fermée.
+         WAKE_LOCK garde le processeur éveillé entre la notification du PBX et
+         l'INVITE — sans lui, un téléphone en veille profonde peut se rendormir
+         dans l'intervalle et l'appel n'arrive jamais.
+         USE_FULL_SCREEN_INTENT ouvre l'écran de sonnerie sur un téléphone
+         verrouillé. ⚠️ Depuis Android 14, elle n'est accordée à l'installation
+         qu'aux applications de téléphonie ou de réveille-matin ; ailleurs elle
+         se demande dans les réglages. Sans elle, la notification reste une
+         notification — visible et actionnable, mais qui n'ouvre rien seule. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
+
     <!-- Discover UnifiedPush distributors (ntfy, etc.) on Android 11+. -->
     <queries>
         <intent>
@@ -155,6 +167,27 @@
             android:name=".sip.CallService"
             android:exported="false"
             android:foregroundServiceType="microphone"/>
+
+        <!-- Écran de sonnerie ouvert par l'intention plein écran du réveil.
+             ⚠️ Tâche à part (singleInstance) et EXCLUE des récents : c'est un
+             écran qui s'affiche par-dessus le verrouillage, il n'a rien à faire
+             dans la pile de l'app ni dans l'historique. showWhenLocked et
+             turnScreenOn sont aussi posés en code, pour l'API 26 qui ne connaît
+             pas ces attributs. -->
+        <activity
+            android:name=".sip.IncomingCallActivity"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:excludeFromRecents="true"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:taskAffinity=".sip.call"
+            android:theme="@style/Theme.BfSms"/>
+
+        <!-- « Refuser » depuis la notification : rien ne s'ouvre. -->
+        <receiver
+            android:name=".sip.CallDeclineReceiver"
+            android:exported="false"/>
 
         <!-- GenFox comme assistant du système. Les trois pièces sont
              indissociables : le service d'interaction déclare la capacité, le

@@ -1,0 +1,15 @@
+* The handset rings even when the app is closed. Before it dials, the PBX wakes
+  the phone, which re-registers and raises a call screen over the lock screen,
+  with Answer and Decline. That screen shows the caller and nothing else, never
+  your conversations
+* Notifications come back after a push outage. The app announced its
+  notification address only at sign-in: lost once, it never came back and
+  nothing arrived, with no error anywhere. It now re-asserts it on every start
+* Waking the phone has its own switch, separate from the one for texts: turning
+  off text notifications no longer turns off calls
+* Swiping a row now takes a quarter of its width, in texts and email alike. A
+  flick no longer archives, however fast it is. The background only lights up,
+  and the phone only buzzes, once the action is committed, so letting go on a
+  grey background never does anything
+* The swipe background names the action you actually configured: "snooze" and
+  "mark read" no longer show the archive icon

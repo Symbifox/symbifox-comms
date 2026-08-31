@@ -15,9 +15,16 @@ notifications go through [UnifiedPush](https://unifiedpush.org).
 - **Route a message into Odoo**: attach it to a record, or spawn a task,
   helpdesk ticket, lead, invoice, bill or expense straight from an email
 - **A keypad in its own tab**, with contact search and a call log — plus a call
-  button inside any conversation. The call comes from the server's PBX, which
-  rings your phone and then dials, so the other end sees the business line
-  rather than your own number. No SIP stack on the handset
+  button inside any conversation. Two ways to place it, and the phone chooses:
+  the handset registers with the PBX as a **SIP extension of its own** and dials
+  directly, or, where that is not available, the PBX rings your phone and then
+  dials. Either way the other end sees the business line rather than your own
+  number
+- **Incoming calls ring the handset, even with the app closed.** A SIP
+  registration dies with the process, so the PBX asks the server to wake the
+  phone before it dials: a push arrives, the extension re-registers, and the
+  call lands on a full-screen ringing screen over the lock screen. It shows the
+  caller and two buttons, never your conversations
 - **Dictate instead of typing**, in a text message or an email: the recording
   goes to the instance's own transcription service and comes back as text.
   Nothing is sent anywhere else, and the recording is deleted once transcribed

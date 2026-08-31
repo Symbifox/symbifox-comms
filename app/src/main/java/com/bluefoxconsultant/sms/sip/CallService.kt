@@ -82,11 +82,26 @@ class CallService : Service() {
         private const val NOTIF_ID = 4201
         private const val EXTRA_PEER = "peer"
 
+        /**
+         * Démarre le service, et ACCEPTE de ne pas y arriver.
+         *
+         * ⚠️ Depuis Android 12, un service au premier plan lancé alors que
+         * l'app est en arrière-plan lève `ForegroundServiceStartNotAllowedException`,
+         * et depuis Android 14 le type « microphone » ajoute son propre refus
+         * (`SecurityException`) tant qu'aucun écran de l'app n'est visible.
+         *
+         * Ça n'arrivait jamais tant qu'un appel ne pouvait naître que devant
+         * l'utilisateur. Le réveil par push change ça : le PBX prévient pendant
+         * que l'app est fermée, et laisser l'exception remonter ferait planter
+         * le processus au moment précis où il doit sonner. L'écran de sonnerie
+         * ([IncomingCallActivity]) rend l'app visible et le prochain essai
+         * passe ; en attendant, un appel sans service vaut mieux qu'un plantage.
+         */
         fun start(context: Context, peer: String) {
             val intent = Intent(context, CallService::class.java).putExtra(EXTRA_PEER, peer)
             // startForegroundService : obligatoire depuis O quand l'app n'est
             // pas déjà au premier plan, et sans effet néfaste quand elle l'est.
-            context.startForegroundService(intent)
+            runCatching { context.startForegroundService(intent) }
         }
 
         fun stop(context: Context) {

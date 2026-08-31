@@ -2,12 +2,9 @@
 
 package com.bluefoxconsultant.sms.ui.threads
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -38,21 +35,17 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,6 +58,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.collectAsState
 import com.bluefoxconsultant.sms.data.Graph
 import com.bluefoxconsultant.sms.data.SwipeAction
+import com.bluefoxconsultant.sms.ui.SwipeActionRow
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
 
 @Composable
@@ -177,7 +171,7 @@ fun ThreadsScreen(
                 } else {
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
                         items(vm.threads, key = { it.id }) { thread ->
-                            SwipeToArchive(
+                            SwipeActionRow(
                                 // Pendant une sélection, le glissement est
                                 // refusé : viser une case et emporter la ligne
                                 // d'à côté serait le pire des deux gestes.
@@ -185,7 +179,7 @@ fun ThreadsScreen(
                                 else swipe.smsStart,
                                 endAction = if (vm.selectionMode) SwipeAction.NONE
                                 else swipe.smsEnd,
-                                onArchive = { vm.archive(thread.id) },
+                                onAction = { vm.archive(thread.id) },
                             ) {
                                 ThreadRow(
                                     thread = thread,
@@ -288,70 +282,6 @@ private fun LineFilterRow(
             )
         }
     }
-}
-
-@Composable
-private fun SwipeToArchive(
-    startAction: SwipeAction,
-    endAction: SwipeAction,
-    onArchive: () -> Unit,
-    content: @Composable () -> Unit,
-) {
-    // ⚠️ `rememberSwipeToDismissBoxState` GARDE la première lambda qu'on lui
-    // donne : les paramètres capturés à la composition initiale y restent figés
-    // pour la vie de la ligne. Sans `rememberUpdatedState`, neutraliser le
-    // glissement pendant une sélection n'aurait aucun effet — la ligne partirait
-    // quand même, avec l'action d'avant.
-    val start by rememberUpdatedState(startAction)
-    val end by rememberUpdatedState(endAction)
-    val archive by rememberUpdatedState(onArchive)
-    val state = rememberSwipeToDismissBoxState(
-        confirmValueChange = { value ->
-            val action = when (value) {
-                SwipeToDismissBoxValue.StartToEnd -> start
-                SwipeToDismissBoxValue.EndToStart -> end
-                else -> SwipeAction.NONE
-            }
-            if (action == SwipeAction.NONE) {
-                false
-            } else {
-                archive()
-                true
-            }
-        },
-        // A deliberate drag, not a flick — see the mail list for the reasoning.
-        positionalThreshold = { distance -> distance * 0.55f },
-    )
-    val dismissing = state.dismissDirection != SwipeToDismissBoxValue.Settled
-
-    SwipeToDismissBox(
-        state = state,
-        backgroundContent = {
-            if (dismissing) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(BrandAccent)
-                        .padding(horizontal = 24.dp),
-                    contentAlignment =
-                    if (state.dismissDirection == SwipeToDismissBoxValue.EndToStart) {
-                        Alignment.CenterEnd
-                    } else {
-                        Alignment.CenterStart
-                    },
-                ) {
-                    Icon(
-                        Icons.Filled.Archive,
-                        contentDescription = "Archiver",
-                        tint = Color.White,
-                    )
-                }
-            }
-        },
-        content = {
-            Box(Modifier.background(MaterialTheme.colorScheme.surface)) { content() }
-        },
-    )
 }
 
 @Composable

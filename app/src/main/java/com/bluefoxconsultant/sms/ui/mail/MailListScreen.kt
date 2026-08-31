@@ -47,9 +47,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
@@ -60,22 +57,18 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -93,6 +86,7 @@ import com.bluefoxconsultant.sms.data.SwipeAction
 import com.bluefoxconsultant.sms.ui.relativeTime
 import com.bluefoxconsultant.sms.data.MailDraft
 import com.bluefoxconsultant.sms.data.MailMessage
+import com.bluefoxconsultant.sms.ui.SwipeActionRow
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
 
 @Composable
@@ -284,7 +278,7 @@ fun MailListScreen(
                         contentPadding = PaddingValues(bottom = 88.dp),
                     ) {
                         items(vm.threads, key = { it.threadKey }) { thread ->
-                            SwipeRow(
+                            SwipeActionRow(
                                 // Already handled: swiping should put it back,
                                 // not archive something that already is.
                                 restore = thread.isHandled,
@@ -454,96 +448,6 @@ private fun OfflineBanner(offline: Boolean, queued: Int) {
             color = MaterialTheme.colorScheme.onTertiaryContainer,
         )
     }
-}
-
-/**
- * Swipe row with a configurable action per direction.
- *
- * A direction set to [SwipeAction.NONE] refuses the gesture outright rather
- * than swallowing it: a row that slides away and then springs back with
- * nothing having happened reads as a bug.
- */
-@Composable
-private fun SwipeRow(
-    restore: Boolean,
-    startAction: SwipeAction,
-    endAction: SwipeAction,
-    onAction: (SwipeAction) -> Unit,
-    content: @Composable () -> Unit,
-) {
-    // ⚠️ `rememberSwipeToDismissBoxState` GARDE la première lambda qu'on lui
-    // donne : les paramètres capturés à la composition initiale y restent figés
-    // pour la vie de la ligne. Sans `rememberUpdatedState`, neutraliser le
-    // glissement pendant une sélection n'aurait aucun effet — la ligne partirait
-    // quand même, avec l'action d'avant.
-    val start by rememberUpdatedState(startAction)
-    val end by rememberUpdatedState(endAction)
-    val act by rememberUpdatedState(onAction)
-    val state = rememberSwipeToDismissBoxState(
-        confirmValueChange = { value ->
-            val action = when (value) {
-                SwipeToDismissBoxValue.StartToEnd -> start
-                SwipeToDismissBoxValue.EndToStart -> end
-                else -> SwipeAction.NONE
-            }
-            if (action == SwipeAction.NONE) {
-                false
-            } else {
-                act(action)
-                true
-            }
-        },
-        // Default threshold fires on a flick. Archiving moves the message on
-        // the real mail server, so it should take a deliberate drag past the
-        // halfway mark, not a brush of the thumb.
-        positionalThreshold = { distance -> distance * 0.55f },
-    )
-    // ⚠️ `progress` is 1.0 when SETTLED — it measures the distance between the
-    // current anchor and the target, which are the same at rest. Reading it
-    // without checking the direction painted the "armed" background behind
-    // every row permanently, which is what put a blue wash and a stray archive
-    // icon under the list.
-    val dismissing = state.dismissDirection != SwipeToDismissBoxValue.Settled
-    val armed = dismissing && state.progress.coerceIn(0f, 1f) > 0.5f
-    val tint by animateColorAsState(
-        if (armed) BrandAccent else MaterialTheme.colorScheme.surfaceVariant,
-        label = "swipe-bg",
-    )
-    val iconScale by animateFloatAsState(if (armed) 1.15f else 0.85f, label = "swipe-icon")
-
-    SwipeToDismissBox(
-        state = state,
-        backgroundContent = {
-            // Drawn only during an actual gesture. At rest there is nothing
-            // behind the row at all.
-            if (dismissing) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(tint)
-                        .padding(horizontal = 24.dp),
-                    contentAlignment =
-                    if (state.dismissDirection == SwipeToDismissBoxValue.EndToStart) {
-                        Alignment.CenterEnd
-                    } else {
-                        Alignment.CenterStart
-                    },
-                ) {
-                    Icon(
-                        if (restore) Icons.Filled.Inbox else Icons.Filled.Archive,
-                        contentDescription = if (restore) "Remettre" else "Archiver",
-                        tint = if (armed) Color.White
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.scale(iconScale),
-                    )
-                }
-            }
-        },
-        // Opaque, so nothing behind the row can ever show through it.
-        content = {
-            Box(Modifier.background(MaterialTheme.colorScheme.surface)) { content() }
-        },
-    )
 }
 
 /**

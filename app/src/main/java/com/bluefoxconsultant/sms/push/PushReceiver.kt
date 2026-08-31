@@ -4,6 +4,7 @@ import android.content.Context
 import com.bluefoxconsultant.sms.data.Graph
 import com.bluefoxconsultant.sms.data.RegisterPushRequest
 import com.bluefoxconsultant.sms.data.Service
+import com.bluefoxconsultant.sms.sip.IncomingCall
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -89,6 +90,18 @@ class PushReceiver : MessagingReceiver() {
             )
             "mail_clear" -> Notifier.cancelMail(appContext, int("email_id") ?: return)
             "mail_clear_all" -> Notifier.cancelAllMail(appContext)
+
+            // ---- bf_softphone : réveil par push ----
+            // Le seul type qui n'annonce pas une nouvelle à lire, mais un
+            // appel qui ARRIVE : le PBX attend que le poste se réenregistre
+            // pour composer, donc chaque seconde perdue ici est une seconde de
+            // silence pour le correspondant.
+            "call" -> IncomingCall.wake(
+                appContext,
+                str("peer").orEmpty(),
+                str("name").orEmpty(),
+                str("call_id").orEmpty(),
+            )
 
             // ---- bf_claude_chat ----
             // The turn was asked minutes ago and finished without the screen

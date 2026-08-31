@@ -1,0 +1,16 @@
+* Le combiné sonne même quand l'app est fermée. Avant de composer, le standard
+  réveille le téléphone, qui se réenregistre et fait apparaître un écran
+  d'appel par-dessus l'écran verrouillé, avec Répondre et Refuser. Cet écran ne
+  montre que le correspondant, jamais les conversations
+* Les notifications reviennent après une panne de push. L'app n'annonçait son
+  adresse de notification qu'à la connexion : perdue une fois, elle ne revenait
+  jamais et plus rien n'arrivait, sans erreur nulle part. Elle la réaffirme
+  maintenant à chaque démarrage
+* Le réveil du téléphone a son propre interrupteur, distinct de celui des
+  textos : couper les notifications de texto ne coupe plus les appels
+* Glisser une ligne demande maintenant un quart de la largeur, textos et
+  courriels pareil. Une chiquenaude ne suffit plus à archiver, quelle que soit
+  sa vitesse. Le fond ne s'allume et l'appareil ne vibre qu'une fois l'action
+  acquise, donc relâcher sur un fond gris ne fait jamais rien
+* Le fond du glissement annonce l'action réellement réglée : « reporter » et
+  « marquer lu » ne montrent plus l'icône d'archivage
