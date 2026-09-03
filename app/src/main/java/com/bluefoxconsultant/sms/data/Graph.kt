@@ -1,6 +1,7 @@
 package com.bluefoxconsultant.sms.data
 
 import android.content.Context
+import com.bluefoxconsultant.sms.network.AgendaRepository
 import com.bluefoxconsultant.sms.network.ApiClient
 import com.bluefoxconsultant.sms.network.GenfoxRepository
 import com.bluefoxconsultant.sms.network.HostingRepository
@@ -24,6 +25,9 @@ object Graph {
 
     /** REST surface of `bf_hosting_mobile` (alertes du parc). */
     private const val HOSTING_API_PATH = "/bf_hosting/mobile/v1"
+
+    /** REST surface of `bf_calendar_mobile` (agenda et échéances). */
+    private const val AGENDA_API_PATH = "/bf_calendar/mobile/v1"
 
     lateinit var tokenStore: TokenStore
         private set
@@ -80,6 +84,16 @@ object Graph {
     lateinit var hostingStore: HostingStore
         private set
 
+    /**
+     * Agenda — `bf_calendar_mobile`. Répond au jeton que cet install possède,
+     * messages ou courriel : le module serveur ne dépend pas de la moitié qui
+     * l'a émis, et exiger l'une exclurait l'autre.
+     */
+    lateinit var agenda: AgendaRepository
+        private set
+    lateinit var agendaStore: AgendaStore
+        private set
+
     /** Last-known mailbox on disk, and actions taken while offline. */
     lateinit var mailCache: MailCache
         private set
@@ -130,6 +144,12 @@ object Graph {
             ApiClient(tokenStore, Service.SMS, apiPath = HOSTING_API_PATH),
         )
         hostingStore = HostingStore(hosting)
+        agenda = AgendaRepository(
+            ApiClient(tokenStore, Service.SMS, apiPath = AGENDA_API_PATH),
+            ApiClient(tokenStore, Service.MAIL, apiPath = AGENDA_API_PATH),
+            tokenStore,
+        )
+        agendaStore = AgendaStore(agenda)
         mailCache = MailCache(context.applicationContext)
         outbox = MailOutbox(context.applicationContext)
         drafts = MailDrafts(context.applicationContext)

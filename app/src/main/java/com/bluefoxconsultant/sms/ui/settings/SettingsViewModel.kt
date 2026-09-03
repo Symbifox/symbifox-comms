@@ -44,6 +44,7 @@ class SettingsViewModel : ViewModel() {
             Graph.speechStore.invalidate()
             Graph.genfoxStore.invalidate()
             Graph.hostingStore.invalidate()
+            Graph.agendaStore.invalidate()
             store.clearAllTokens()
         }
     }

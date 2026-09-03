@@ -1,0 +1,159 @@
+package com.bluefoxconsultant.sms.ui.agenda
+
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.bluefoxconsultant.sms.data.AgendaConfig
+import com.bluefoxconsultant.sms.data.AgendaEvent
+import com.bluefoxconsultant.sms.data.Graph
+import kotlinx.coroutines.launch
+import java.time.DayOfWeek
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.temporal.TemporalAdjusters
+
+enum class AgendaMode { DAY, WEEK }
+
+/**
+ * La grille, et ce qu'il faut pour la remplir.
+ *
+ * La fenêtre demandée déborde d'un jour de chaque côté : une rencontre
+ * commencée la veille à 22:00 traverse minuit, et la couper à la borne la
+ * ferait disparaître de la colonne où elle est pourtant visible.
+ */
+class AgendaViewModel : ViewModel() {
+
+    /** Le fuseau de l'APPAREIL : c'est l'heure que la personne lit sur elle. */
+    val zone: ZoneId = ZoneId.systemDefault()
+
+    var mode by mutableStateOf(AgendaMode.WEEK)
+        private set
+    var anchor by mutableStateOf(LocalDate.now(zone))
+        private set
+    var events by mutableStateOf<List<AgendaEvent>>(emptyList())
+        private set
+    var taskCounts by mutableStateOf<Map<LocalDate, Int>>(emptyMap())
+        private set
+    var config by mutableStateOf(AgendaConfig())
+        private set
+    var loading by mutableStateOf(false)
+        private set
+    var error by mutableStateOf<String?>(null)
+        private set
+    var selected by mutableStateOf<AgendaEvent?>(null)
+        private set
+    var busy by mutableStateOf(false)
+        private set
+
+    init {
+        viewModelScope.launch {
+            Graph.agendaStore.ensureLoaded()
+            config = Graph.agendaStore.config.value
+            load()
+        }
+    }
+
+    /** Les jours affichés, dans l'ordre. */
+    val days: List<LocalDate>
+        get() = when (mode) {
+            AgendaMode.DAY -> listOf(anchor)
+            AgendaMode.WEEK -> {
+                val monday = anchor.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+                (0L..6L).map { monday.plusDays(it) }
+            }
+        }
+
+    fun switchMode(next: AgendaMode) {
+        if (next == mode) return
+        mode = next
+        load()
+    }
+
+    fun step(forward: Boolean) {
+        val delta = if (mode == AgendaMode.DAY) 1L else 7L
+        anchor = if (forward) anchor.plusDays(delta) else anchor.minusDays(delta)
+        load()
+    }
+
+    fun today() {
+        anchor = LocalDate.now(zone)
+        load()
+    }
+
+    fun open(event: AgendaEvent) {
+        selected = event
+        // La fiche complète (OdJ, compte rendu, participants) n'est pas dans la
+        // liste : la charger d'un coup pour la semaine ferait sept requêtes de
+        // trop pour un écran qu'on n'ouvre peut-être pas.
+        viewModelScope.launch {
+            val full = runCatching { Graph.agenda.event(event.id, event.key) }.getOrNull()
+            if (full != null && selected?.key == event.key) selected = full
+        }
+    }
+
+    fun close() { selected = null }
+
+    fun clearError() { error = null }
+
+    fun load() {
+        viewModelScope.launch {
+            loading = true
+            error = null
+            try {
+                val visible = days
+                val from = visible.first().minusDays(1).atStartOfDay(zone).toInstant()
+                val to = visible.last().plusDays(2).atStartOfDay(zone).toInstant()
+                events = Graph.agenda.events(from, to).events
+                taskCounts = Graph.agenda.taskCounts(from, to).counts
+                    .mapNotNull { (key, count) ->
+                        runCatching { LocalDate.parse(key) }.getOrNull()?.let { it to count }
+                    }.toMap()
+            } catch (e: Exception) {
+                error = e.message ?: "Agenda indisponible."
+            } finally {
+                loading = false
+            }
+        }
+    }
+
+    fun snooze(event: AgendaEvent, minutes: Int) = act {
+        Graph.agenda.snooze(event.id, event.key, minutes)
+    }
+
+    fun dismiss(event: AgendaEvent) = act {
+        Graph.agenda.dismiss(event.id, event.key)
+    }
+
+    fun rsvp(event: AgendaEvent, state: String) = act {
+        Graph.agenda.rsvp(event.id, event.key, state)
+    }
+
+    /**
+     * Un geste, puis on relit.
+     *
+     * On ne devine pas le nouvel état côté app : le serveur peut avoir résolu
+     * l'événement par sa CLÉ vers une occurrence recréée, donc l'identifiant
+     * gardé ici n'est pas forcément celui qui a bougé.
+     */
+    private fun act(block: suspend () -> Boolean) {
+        viewModelScope.launch {
+            busy = true
+            val ok = runCatching { block() }.getOrDefault(false)
+            busy = false
+            if (!ok) {
+                error = "Le geste n'a pas été enregistré."
+                return@launch
+            }
+            val current = selected
+            load()
+            if (current != null) {
+                val full = runCatching {
+                    Graph.agenda.event(current.id, current.key)
+                }.getOrNull()
+                if (full != null) selected = full
+            }
+        }
+    }
+}

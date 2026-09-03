@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Dialpad
 import androidx.compose.material.icons.filled.MailOutline
 import androidx.compose.material3.Button
@@ -67,6 +69,8 @@ import com.bluefoxconsultant.sms.push.Notifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bluefoxconsultant.sms.ui.compose.ComposeScreen
 import com.bluefoxconsultant.sms.ui.conversation.ConversationScreen
+import com.bluefoxconsultant.sms.ui.agenda.AgendaScreen
+import com.bluefoxconsultant.sms.ui.agenda.TachesScreen
 import com.bluefoxconsultant.sms.ui.genfox.GenfoxScreen
 import com.bluefoxconsultant.sms.ui.phone.PhoneScreen
 import com.bluefoxconsultant.sms.ui.instance.InstanceScreen
@@ -312,12 +316,18 @@ private fun HomeShell(
     // screens. It earns a tab only once the server says it is configured.
     val genfox by Graph.genfoxStore.config.collectAsStateWithLifecycle()
     val phone by Graph.phoneStore.config.collectAsStateWithLifecycle()
+    // Même raison que GenFox : l'agenda est une capacité de la session en
+    // place. Deux onglets en dépendent, l'agenda et les échéances, et ils
+    // apparaissent ensemble ou pas du tout — un agenda sans ses échéances
+    // laisserait croire que la journée est vide.
+    val agenda by Graph.agendaStore.ping.collectAsStateWithLifecycle()
     LaunchedEffect(tokens.isNotEmpty()) {
         if (tokens.isNotEmpty()) {
             Graph.genfoxStore.ensureLoaded()
             // Asked here rather than only from a conversation's call button, so
             // the keypad can earn its own tab.
             Graph.phoneStore.ensureLoaded()
+            Graph.agendaStore.ensureLoaded()
         }
     }
 
@@ -343,7 +353,8 @@ private fun HomeShell(
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
     val onRoot = route == Tabs.SMS || route == Tabs.MAIL ||
-        route == Tabs.GENFOX || route == Tabs.PHONE
+        route == Tabs.GENFOX || route == Tabs.PHONE ||
+        route == Tabs.AGENDA || route == Tabs.TASKS
 
     // A push for one tab switches to it before opening the detail screen.
     LaunchedEffect(pendingThread.value, tabs) {
@@ -482,6 +493,18 @@ private fun HomeShell(
                     onAssistConsumed = { pendingAssist.value = false },
                 )
             }
+            composable(Tabs.AGENDA) {
+                AgendaScreen(
+                    onOpenTasks = {
+                        nav.navigate(Tabs.TASKS) {
+                            popUpTo(nav.graph.startDestinationId) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                )
+            }
+            composable(Tabs.TASKS) { TachesScreen() }
             composable(Tabs.PHONE) {
                 PhoneScreen(
                     prefill = pendingDial.value?.takeIf { it.isNotBlank() },
@@ -605,6 +628,10 @@ private fun HomeShell(
             }
             if (genfox.enabled && tokens.isNotEmpty()) {
                 add(Triple(Tabs.GENFOX, "Gen", Icons.Filled.AutoAwesome))
+            }
+            if (agenda.enabled && tokens.isNotEmpty()) {
+                add(Triple(Tabs.AGENDA, "Agenda", Icons.Filled.CalendarMonth))
+                add(Triple(Tabs.TASKS, "Tâches", Icons.Filled.Checklist))
             }
         }
         if (bottomTabs.size > 1 && onRoot) {
@@ -808,5 +835,7 @@ private object Tabs {
     const val MAIL_COMPOSE = "mail_compose"
     const val GENFOX = "genfox"
     const val PHONE = "phone"
+    const val AGENDA = "agenda"
+    const val TASKS = "taches"
     const val SHARE = "share"
 }
