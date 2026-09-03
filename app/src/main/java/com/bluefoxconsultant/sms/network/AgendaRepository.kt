@@ -1,11 +1,15 @@
 package com.bluefoxconsultant.sms.network
 
+import com.bluefoxconsultant.sms.data.AgendaCalendarsResponse
 import com.bluefoxconsultant.sms.data.AgendaConfig
 import com.bluefoxconsultant.sms.data.AgendaEvent
 import com.bluefoxconsultant.sms.data.AgendaEventResponse
 import com.bluefoxconsultant.sms.data.AgendaEventsResponse
 import com.bluefoxconsultant.sms.data.AgendaPing
+import com.bluefoxconsultant.sms.data.AgendaTask
 import com.bluefoxconsultant.sms.data.AgendaTaskCounts
+import com.bluefoxconsultant.sms.data.AgendaTaskOptions
+import com.bluefoxconsultant.sms.data.AgendaTaskResponse
 import com.bluefoxconsultant.sms.data.AgendaTasksResponse
 import com.bluefoxconsultant.sms.data.Service
 import com.bluefoxconsultant.sms.data.TokenStore
@@ -144,4 +148,135 @@ class AgendaRepository(
             }
             append('"')
         }
+
+    // ── Écrire sur l'agenda ─────────────────────────────────────────────
+
+    suspend fun calendars(): List<com.bluefoxconsultant.sms.data.AgendaCalendar> =
+        withContext(Dispatchers.IO) {
+            val client = api()
+            runCatching {
+                client.json.decodeFromString<AgendaCalendarsResponse>(
+                    client.get("/calendars"),
+                ).calendars
+            }.getOrDefault(emptyList())
+        }
+
+    /** Rend l'événement créé, ou null. Le serveur y met le calendrier voulu. */
+    suspend fun createEvent(
+        name: String,
+        startUtc: Instant,
+        stopUtc: Instant,
+        location: String,
+        videocall: String,
+        calendarId: Int?,
+    ): AgendaEvent? = withContext(Dispatchers.IO) {
+        val client = api()
+        val corps = buildString {
+            append("{")
+            append("\"name\":").append(quote(name))
+            append(",\"start\":").append(quote(stamp.format(startUtc)))
+            append(",\"stop\":").append(quote(stamp.format(stopUtc)))
+            if (location.isNotBlank()) append(",\"location\":").append(quote(location))
+            if (videocall.isNotBlank()) {
+                append(",\"videocall_location\":").append(quote(videocall))
+            }
+            if (calendarId != null) append(",\"calendar_config_id\":").append(calendarId)
+            append("}")
+        }
+        runCatching {
+            client.json.decodeFromString<AgendaEventResponse>(
+                client.postJson("/event/create", corps),
+            ).event
+        }.getOrNull()
+    }
+
+    /** Pose ou retire une exclusion. Rend la fiche telle que le serveur la voit. */
+    suspend fun setFlags(
+        id: Int,
+        key: String,
+        skipAgenda: Boolean? = null,
+        skipDashboard: Boolean? = null,
+    ): AgendaEvent? = withContext(Dispatchers.IO) {
+        val client = api()
+        val corps = buildString {
+            append("{\"event_id\":").append(id)
+            append(",\"key\":").append(quote(key))
+            skipAgenda?.let { append(",\"skip_agenda\":").append(it) }
+            skipDashboard?.let { append(",\"skip_dashboard\":").append(it) }
+            append("}")
+        }
+        runCatching {
+            client.json.decodeFromString<AgendaEventResponse>(
+                client.postJson("/event/flags", corps),
+            ).event
+        }.getOrNull()
+    }
+
+    // ── Écrire sur les tâches ───────────────────────────────────────────
+
+    suspend fun taskOptions(projectId: Int? = null): AgendaTaskOptions =
+        withContext(Dispatchers.IO) {
+            val client = api()
+            val suffixe = projectId?.let { "?project_id=$it" } ?: ""
+            runCatching {
+                client.json.decodeFromString<AgendaTaskOptions>(
+                    client.get("/task/options$suffixe"),
+                )
+            }.getOrDefault(AgendaTaskOptions())
+        }
+
+    /**
+     * [values] est un JSON déjà formé : les champs offerts diffèrent d'un geste
+     * à l'autre, et une signature par combinaison serait vite illisible. Le
+     * serveur filtre en liste blanche de toute façon.
+     */
+    suspend fun writeTask(id: Int, values: String): AgendaTask? =
+        withContext(Dispatchers.IO) {
+            val client = api()
+            runCatching {
+                client.json.decodeFromString<AgendaTaskResponse>(
+                    client.postJson(
+                        "/task/write",
+                        """{"task_id":$id,"values":$values}""",
+                    ),
+                ).task
+            }.getOrNull()
+        }
+
+    suspend fun completeTask(id: Int, done: Boolean): AgendaTask? =
+        withContext(Dispatchers.IO) {
+            val client = api()
+            runCatching {
+                client.json.decodeFromString<AgendaTaskResponse>(
+                    client.postJson("/task/done", """{"task_id":$id,"done":$done}"""),
+                ).task
+            }.getOrNull()
+        }
+
+    suspend fun createTask(
+        name: String,
+        projectId: Int,
+        deadlineUtc: Instant?,
+        priority: String,
+        tagIds: List<Int>,
+    ): AgendaTask? = withContext(Dispatchers.IO) {
+        val client = api()
+        val corps = buildString {
+            append("{\"name\":").append(quote(name))
+            append(",\"project_id\":").append(projectId)
+            deadlineUtc?.let {
+                append(",\"date_deadline\":").append(quote(stamp.format(it)))
+            }
+            if (priority != "0") append(",\"priority\":").append(quote(priority))
+            if (tagIds.isNotEmpty()) {
+                append(",\"tag_ids\":").append(tagIds.joinToString(",", "[", "]"))
+            }
+            append("}")
+        }
+        runCatching {
+            client.json.decodeFromString<AgendaTaskResponse>(
+                client.postJson("/task/create", corps),
+            ).task
+        }.getOrNull()
+    }
 }

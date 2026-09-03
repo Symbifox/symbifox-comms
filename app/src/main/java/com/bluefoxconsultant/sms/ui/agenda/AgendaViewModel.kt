@@ -5,11 +5,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.bluefoxconsultant.sms.data.AgendaCalendar
 import com.bluefoxconsultant.sms.data.AgendaConfig
 import com.bluefoxconsultant.sms.data.AgendaEvent
 import com.bluefoxconsultant.sms.data.Graph
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.TemporalAdjusters
@@ -47,10 +49,25 @@ class AgendaViewModel : ViewModel() {
     var busy by mutableStateOf(false)
         private set
 
+    /**
+     * Hauteur d'une heure, en points. Le pincement la fait varier, ce qui
+     * revient à changer le NOMBRE D'HEURES visibles — la demande d'Olivier.
+     * Bornée : sous 24 dp le titre d'une rencontre ne rentre plus, au-delà de
+     * 160 dp on fait défiler une journée pour rien.
+     */
+    var hourHeight by mutableStateOf(56f)
+        private set
+
+    var calendars by mutableStateOf<List<AgendaCalendar>>(emptyList())
+        private set
+    var composing by mutableStateOf(false)
+        private set
+
     init {
         viewModelScope.launch {
             Graph.agendaStore.ensureLoaded()
             config = Graph.agendaStore.config.value
+            calendars = runCatching { Graph.agenda.calendars() }.getOrDefault(emptyList())
             load()
         }
     }
@@ -94,6 +111,60 @@ class AgendaViewModel : ViewModel() {
     }
 
     fun close() { selected = null }
+
+    fun openComposer() { composing = true }
+
+    fun closeComposer() { composing = false }
+
+    /** Le pincement, borné pour rester lisible aux deux bouts. */
+    fun zoom(facteur: Float) {
+        hourHeight = (hourHeight * facteur).coerceIn(24f, 160f)
+    }
+
+    fun createEvent(
+        name: String,
+        startUtc: Instant,
+        stopUtc: Instant,
+        location: String,
+        videocall: String,
+        calendarId: Int?,
+    ) {
+        viewModelScope.launch {
+            busy = true
+            val cree = runCatching {
+                Graph.agenda.createEvent(name, startUtc, stopUtc, location,
+                    videocall, calendarId)
+            }.getOrNull()
+            busy = false
+            if (cree == null) {
+                error = "La rencontre n'a pas été créée."
+                return@launch
+            }
+            composing = false
+            // On se place sur le jour de la rencontre créée : la créer puis
+            // laisser l'écran sur une autre semaine donne l'impression que
+            // rien ne s'est passé.
+            cree.dayAt(zone)?.let { anchor = it }
+            load()
+        }
+    }
+
+    fun setFlags(event: AgendaEvent, skipAgenda: Boolean? = null,
+                 skipDashboard: Boolean? = null) {
+        viewModelScope.launch {
+            busy = true
+            val maj = runCatching {
+                Graph.agenda.setFlags(event.id, event.key, skipAgenda, skipDashboard)
+            }.getOrNull()
+            busy = false
+            if (maj == null) {
+                error = "L'exclusion n'a pas été enregistrée."
+                return@launch
+            }
+            selected = maj
+            load()
+        }
+    }
 
     fun clearError() { error = null }
 

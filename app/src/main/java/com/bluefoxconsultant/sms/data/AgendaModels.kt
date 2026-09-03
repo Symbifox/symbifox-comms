@@ -66,6 +66,16 @@ data class AgendaEvent(
     @SerialName("dismissed_at") val dismissedAt: String? = null,
     @SerialName("agenda_state") val agendaState: String = "none",
     @SerialName("minutes_state") val minutesState: String = "none",
+    /**
+     * Les couleurs viennent du SERVEUR, calculées avec la règle d'Odoo.
+     * Les recalculer ici obligerait à recopier une palette de 56 tons et la
+     * formule `((clé - 1) % 55) + 1`, donc à les corriger à deux endroits.
+     */
+    val color: String = "",
+    @SerialName("color_soft") val colorSoft: String = "",
+    val calendar: String = "",
+    @SerialName("skip_agenda") val skipAgenda: Boolean = false,
+    @SerialName("skip_dashboard") val skipDashboard: Boolean = false,
     val url: String = "",
     // Présents seulement sur la fiche détaillée.
     val description: String = "",
@@ -148,11 +158,17 @@ data class AgendaTask(
     val id: Int = 0,
     val name: String = "",
     val project: String = "",
+    @SerialName("project_id") val projectId: Int = 0,
     val deadline: String? = null,
     val priority: String = "0",
     val state: String = "",
+    @SerialName("state_label") val stateLabel: String = "",
     val stage: String = "",
+    @SerialName("stage_id") val stageId: Int = 0,
     val partner: String = "",
+    val color: String = "",
+    val tags: List<AgendaTag> = emptyList(),
+    val done: Boolean = false,
     val url: String = "",
 ) {
     fun deadlineAt(zone: ZoneId): ZonedDateTime? =
@@ -179,3 +195,48 @@ internal fun parseInstant(raw: String): Instant? {
         .recoverCatching { Instant.parse(raw.replace(' ', 'T') + "Z") }
         .getOrNull()
 }
+
+@Serializable
+data class AgendaTag(
+    val id: Int = 0,
+    val name: String = "",
+    /** Déjà en hexadécimal : la palette de kanban vit côté serveur. */
+    val color: String = "",
+)
+
+@Serializable
+data class AgendaCalendar(
+    val id: Int = 0,
+    val name: String = "",
+    val color: String = "",
+    @SerialName("color_soft") val colorSoft: String = "",
+)
+
+@Serializable
+data class AgendaCalendarsResponse(
+    val ok: Boolean = false,
+    val calendars: List<AgendaCalendar> = emptyList(),
+)
+
+@Serializable
+data class AgendaOption(val id: Int = 0, val name: String = "", val color: String = "")
+
+@Serializable
+data class AgendaChoice(val value: String = "", val label: String = "")
+
+/** De quoi remplir les sélecteurs de l'écran des tâches. */
+@Serializable
+data class AgendaTaskOptions(
+    val ok: Boolean = false,
+    val projects: List<AgendaOption> = emptyList(),
+    val stages: List<AgendaOption> = emptyList(),
+    val tags: List<AgendaOption> = emptyList(),
+    val states: List<AgendaChoice> = emptyList(),
+    val priorities: List<AgendaChoice> = emptyList(),
+)
+
+@Serializable
+data class AgendaTaskResponse(
+    val ok: Boolean = false,
+    val task: AgendaTask? = null,
+)

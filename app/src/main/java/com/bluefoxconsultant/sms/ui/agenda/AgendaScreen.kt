@@ -21,8 +21,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -31,13 +33,18 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -47,8 +54,6 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
-
-private val HOUR_HEIGHT = 56.dp
 
 /** L'heure à laquelle la grille s'ouvre : la journée de travail, pas minuit. */
 private const val OPEN_AT_HOUR = 7
@@ -67,13 +72,25 @@ private val FR = Locale.forLanguageTag("fr-CA")
 fun AgendaScreen(onOpenTasks: () -> Unit) {
     val vm: AgendaViewModel = viewModel()
     val scroll = rememberScrollState()
+    val hauteurHeure = vm.hourHeight.dp
 
     LaunchedEffect(Unit) {
         // Ouvrir sur la journée de travail. Sans ça la grille s'ouvre à minuit
         // et il faut faire défiler avant de voir quoi que ce soit.
-        scroll.scrollTo((HOUR_HEIGHT.value * OPEN_AT_HOUR).toInt() * 3)
+        scroll.scrollTo((vm.hourHeight * OPEN_AT_HOUR).toInt())
     }
 
+    // ⚠️ Le zoom change la hauteur totale de la grille. Sans ce rattrapage, la
+    // position gardée en points ferait sauter l'écran à une autre heure à
+    // chaque pincement, et on perdrait ce qu'on regardait.
+    var hauteurPrecedente by remember { mutableFloatStateOf(vm.hourHeight) }
+    LaunchedEffect(vm.hourHeight) {
+        val rapport = vm.hourHeight / hauteurPrecedente
+        if (rapport != 1f) scroll.scrollTo((scroll.value * rapport).toInt())
+        hauteurPrecedente = vm.hourHeight
+    }
+
+    Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize()) {
         AgendaHeader(vm)
         FuseauAvertissement(vm.config.userTz, vm.zone)
@@ -98,17 +115,23 @@ fun AgendaScreen(onOpenTasks: () -> Unit) {
         JoursEnTete(days, vm.taskCounts, vm.zone, onOpenTasks)
         JourneeEntiere(days, vm.events, vm.zone) { vm.open(it) }
 
-        Box(Modifier.weight(1f)) {
+        Box(
+            Modifier
+                .weight(1f)
+                .pointerInput(Unit) { detecterPincement { vm.zoom(it) } },
+        ) {
             Row(Modifier.fillMaxSize().verticalScroll(scroll)) {
-                ColonneDesHeures()
+                ColonneDesHeures(hauteurHeure)
                 days.forEach { day ->
                     Box(
                         Modifier
                             .weight(1f)
-                            .height(HOUR_HEIGHT * 24),
+                            .height(hauteurHeure * 24),
                     ) {
-                        LignesDHeures()
-                        PlacerLesRencontres(day, vm.events, vm.zone) { vm.open(it) }
+                        LignesDHeures(hauteurHeure)
+                        PlacerLesRencontres(day, vm.events, vm.zone, hauteurHeure) {
+                            vm.open(it)
+                        }
                     }
                 }
             }
@@ -121,6 +144,32 @@ fun AgendaScreen(onOpenTasks: () -> Unit) {
         }
     }
 
+        // ⚠️ Posé PAR-DESSUS la grille et non dans l'en-tête : l'en-tête est
+        // déjà chargé de deux rangées, et un bouton de plus y aurait rétréci
+        // le titre de la période.
+        FloatingActionButton(
+            onClick = { vm.openComposer() },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp),
+        ) {
+            Icon(Icons.Filled.Add, contentDescription = "Nouvelle rencontre")
+        }
+    }
+
+    if (vm.composing) {
+        ComposerRencontre(
+            jour = vm.anchor,
+            zone = vm.zone,
+            calendriers = vm.calendars,
+            busy = vm.busy,
+            onCreer = { titre, debut, fin, lieu, visio, calendrier ->
+                vm.createEvent(titre, debut, fin, lieu, visio, calendrier)
+            },
+            onFermer = { vm.closeComposer() },
+        )
+    }
+
     vm.selected?.let { event ->
         FicheRencontre(
             event = event,
@@ -131,6 +180,8 @@ fun AgendaScreen(onOpenTasks: () -> Unit) {
             onSnooze = { vm.snooze(event, it) },
             onDismiss = { vm.dismiss(event) },
             onRsvp = { vm.rsvp(event, it) },
+            onSkipAgenda = { vm.setFlags(event, skipAgenda = it) },
+            onSkipDashboard = { vm.setFlags(event, skipDashboard = it) },
             onClose = { vm.close() },
         )
     }
@@ -287,10 +338,10 @@ private fun JourneeEntiere(
 }
 
 @Composable
-private fun ColonneDesHeures() {
+private fun ColonneDesHeures(hauteurHeure: Dp) {
     Column(Modifier.width(44.dp)) {
         (0..23).forEach { hour ->
-            Box(Modifier.height(HOUR_HEIGHT).fillMaxWidth()) {
+            Box(Modifier.height(hauteurHeure).fillMaxWidth()) {
                 Text(
                     "%02d:00".format(hour),
                     Modifier.align(Alignment.TopEnd).padding(end = 4.dp),
@@ -304,12 +355,12 @@ private fun ColonneDesHeures() {
 }
 
 @Composable
-private fun LignesDHeures() {
+private fun LignesDHeures(hauteurHeure: Dp) {
     Column(Modifier.fillMaxSize()) {
         (0..23).forEach { _ ->
             Box(
                 Modifier
-                    .height(HOUR_HEIGHT)
+                    .height(hauteurHeure)
                     .fillMaxWidth()
                     .background(Color.Transparent),
             ) {
@@ -337,6 +388,7 @@ private fun PlacerLesRencontres(
     day: LocalDate,
     events: List<AgendaEvent>,
     zone: ZoneId,
+    hauteurHeure: Dp,
     onOpen: (AgendaEvent) -> Unit,
 ) {
     val segments = remember(day, events, zone) { segmentsFor(day, events, zone) }
@@ -348,13 +400,13 @@ private fun PlacerLesRencontres(
         val largeur = maxWidth
         segments.forEach { seg ->
             val colonne = largeur / seg.columnCount
-            val hauteur = HOUR_HEIGHT * (seg.durationMinutes / 60f)
+            val hauteur = hauteurHeure * (seg.durationMinutes / 60f)
             Box(
                 Modifier
                     .width(colonne)
                     .offset(
                         x = colonne * seg.columnIndex,
-                        y = HOUR_HEIGHT * (seg.startMinutes / 60f),
+                        y = hauteurHeure * (seg.startMinutes / 60f),
                     )
                     .height(if (hauteur < 22.dp) 22.dp else hauteur)
                     .padding(horizontal = 1.dp, vertical = 1.dp)
@@ -363,6 +415,7 @@ private fun PlacerLesRencontres(
                     .clickable { onOpen(seg.event) }
                     .padding(horizontal = 3.dp, vertical = 1.dp),
             ) {
+                val encre = couleurDuTexte(seg.event)
                 Column {
                     Text(
                         seg.event.name,
@@ -370,21 +423,25 @@ private fun PlacerLesRencontres(
                         fontSize = 10.sp,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        color = encre,
                     )
                     if (seg.durationMinutes >= 45) {
                         Text(
                             heure(seg.event, zone),
                             style = MaterialTheme.typography.labelSmall,
                             fontSize = 9.sp,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            color = encre,
                         )
                     }
                 }
+                // Les pastilles disent d'un coup d'œil ce que la rencontre
+                // porte : ordre du jour, compte rendu, rappel reporté, et le
+                // trait qui marque une rencontre dispensée d'OdJ.
                 val pastille = buildString {
                     if (seg.event.hasAgenda) append("OdJ ")
                     if (seg.event.hasMinutes) append("CR ")
-                    if (seg.event.snoozedUntil != null) append("⏰")
+                    if (seg.event.snoozedUntil != null) append("⏰ ")
+                    if (seg.event.skipAgenda) append("—")
                 }
                 if (pastille.isNotBlank()) {
                     Text(
@@ -392,7 +449,7 @@ private fun PlacerLesRencontres(
                         Modifier.align(Alignment.BottomEnd),
                         style = MaterialTheme.typography.labelSmall,
                         fontSize = 8.sp,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        color = encre,
                     )
                 }
             }
@@ -400,11 +457,38 @@ private fun PlacerLesRencontres(
     }
 }
 
+/**
+ * La couleur vient du serveur, qui applique la règle d'Odoo.
+ *
+ * ⚠️ Ne pas la recalculer ici : il faudrait recopier une palette de 56 tons et
+ * la formule `((clé - 1) % 55) + 1`, donc les corriger à deux endroits. Le
+ * repli sur le thème ne sert qu'aux instances trop anciennes pour l'envoyer.
+ */
 @Composable
-private fun couleurDeLEvenement(event: AgendaEvent): Color = when {
-    event.dismissedAt != null -> MaterialTheme.colorScheme.surfaceVariant
-    event.showAs == "free" -> MaterialTheme.colorScheme.secondaryContainer
-    else -> MaterialTheme.colorScheme.primaryContainer
+private fun couleurDeLEvenement(event: AgendaEvent): Color {
+    val douce = hexOuNull(event.colorSoft)
+    return when {
+        // Un rappel déjà vu s'efface sans disparaître : il reste à sa place
+        // dans la journée, mais cesse de réclamer l'œil.
+        event.dismissedAt != null && douce != null -> douce.copy(alpha = 0.45f)
+        event.dismissedAt != null -> MaterialTheme.colorScheme.surfaceVariant
+        douce != null -> douce
+        event.showAs == "free" -> MaterialTheme.colorScheme.secondaryContainer
+        else -> MaterialTheme.colorScheme.primaryContainer
+    }
+}
+
+/** Le texte lisible sur ce fond, décidé par la luminance et non par le thème. */
+@Composable
+private fun couleurDuTexte(event: AgendaEvent): Color {
+    val fond = hexOuNull(event.colorSoft) ?: return MaterialTheme.colorScheme.onPrimaryContainer
+    val luminance = 0.299f * fond.red + 0.587f * fond.green + 0.114f * fond.blue
+    return if (luminance > 0.6f) Color(0xFF1A1C1E) else Color.White
+}
+
+internal fun hexOuNull(brut: String): Color? {
+    if (brut.length != 7 || !brut.startsWith("#")) return null
+    return runCatching { Color(android.graphics.Color.parseColor(brut)) }.getOrNull()
 }
 
 private fun heure(event: AgendaEvent, zone: ZoneId): String {

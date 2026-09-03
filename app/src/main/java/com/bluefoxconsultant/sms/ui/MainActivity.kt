@@ -635,6 +635,13 @@ private fun HomeShell(
             }
         }
         if (bottomTabs.size > 1 && onRoot) {
+            // ⚠️ Au-delà de quatre onglets, Material3 serre les libellés et
+            // rétrécit les pictogrammes jusqu'à les rendre illisibles. Passé ce
+            // seuil on retire les libellés et on agrandit le picto : la barre
+            // porte alors six cibles franches plutôt que six timbres-poste.
+            // Le libellé reste en description, donc l'accessibilité n'y perd
+            // rien.
+            val serree = bottomTabs.size > 4
             NavigationBar {
                 bottomTabs.forEach { (tabRoute, label, icon) ->
                     NavigationBarItem(
@@ -646,8 +653,15 @@ private fun HomeShell(
                                 restoreState = true
                             }
                         },
-                        icon = { Icon(icon, contentDescription = label) },
-                        label = { Text(label) },
+                        icon = {
+                            Icon(
+                                icon,
+                                contentDescription = label,
+                                modifier = if (serree) Modifier.size(28.dp) else Modifier,
+                            )
+                        },
+                        label = if (serree) null else ({ Text(label) }),
+                        alwaysShowLabel = !serree,
                     )
                 }
             }

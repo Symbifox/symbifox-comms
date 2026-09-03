@@ -6,8 +6,10 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bluefoxconsultant.sms.data.AgendaTask
+import com.bluefoxconsultant.sms.data.AgendaTaskOptions
 import com.bluefoxconsultant.sms.data.Graph
 import kotlinx.coroutines.launch
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
@@ -40,7 +42,86 @@ class TachesViewModel : ViewModel() {
     var error by mutableStateOf<String?>(null)
         private set
 
-    init { load() }
+    /** La tâche ouverte pour modification, et de quoi remplir ses sélecteurs. */
+    var selected by mutableStateOf<AgendaTask?>(null)
+        private set
+    var options by mutableStateOf(AgendaTaskOptions())
+        private set
+    var composing by mutableStateOf(false)
+        private set
+    var busy by mutableStateOf(false)
+        private set
+
+    init {
+        load()
+        viewModelScope.launch {
+            options = runCatching { Graph.agenda.taskOptions() }
+                .getOrDefault(AgendaTaskOptions())
+        }
+    }
+
+    fun open(task: AgendaTask) {
+        selected = task
+        // Les étapes dépendent du projet : les recharger à l'ouverture évite
+        // de proposer une étape qui n'existe pas là où la tâche vit.
+        viewModelScope.launch {
+            val majs = runCatching { Graph.agenda.taskOptions(task.projectId) }
+                .getOrNull() ?: return@launch
+            if (selected?.id == task.id) options = majs
+        }
+    }
+
+    fun close() { selected = null }
+
+    fun openComposer() { composing = true }
+
+    fun closeComposer() { composing = false }
+
+    /**
+     * Le geste le plus fréquent. On rejoue la liste après coup plutôt que de
+     * retirer la ligne à la main : elle change de seau, elle ne disparaît pas.
+     */
+    fun complete(task: AgendaTask, done: Boolean) = agir {
+        Graph.agenda.completeTask(task.id, done)
+    }
+
+    fun write(task: AgendaTask, valeursJson: String) = agir {
+        Graph.agenda.writeTask(task.id, valeursJson)
+    }
+
+    fun create(name: String, projectId: Int, deadline: Instant?,
+               priority: String, tagIds: List<Int>) {
+        viewModelScope.launch {
+            busy = true
+            val cree = runCatching {
+                Graph.agenda.createTask(name, projectId, deadline, priority, tagIds)
+            }.getOrNull()
+            busy = false
+            if (cree == null) {
+                error = "La tâche n'a pas été créée."
+                return@launch
+            }
+            composing = false
+            // Sans échéance elle n'entre dans aucun des deux seaux datés :
+            // ouvrir le troisième évite de la croire perdue.
+            if (cree.deadline == null) showUndated = true
+            load()
+        }
+    }
+
+    private fun agir(bloc: suspend () -> AgendaTask?) {
+        viewModelScope.launch {
+            busy = true
+            val maj = runCatching { bloc() }.getOrNull()
+            busy = false
+            if (maj == null) {
+                error = "Le changement n'a pas été enregistré."
+                return@launch
+            }
+            if (selected?.id == maj.id) selected = maj
+            load()
+        }
+    }
 
     fun clearError() { error = null }
 
