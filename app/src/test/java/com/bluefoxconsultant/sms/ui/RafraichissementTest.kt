@@ -1,4 +1,4 @@
-package com.bluefoxconsultant.sms.ui.agenda
+package com.bluefoxconsultant.sms.ui
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

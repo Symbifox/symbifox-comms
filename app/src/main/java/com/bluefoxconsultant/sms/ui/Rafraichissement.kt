@@ -1,4 +1,4 @@
-package com.bluefoxconsultant.sms.ui.agenda
+package com.bluefoxconsultant.sms.ui
 
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,7 +24,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 /**
- * Ce qui relit l'agenda pendant qu'on le regarde.
+ * Ce qui relit un écran pendant qu'on le regarde.
  *
  * 🔴 Le défaut réparé ici : **rien ne relisait jamais**. Le modèle de vue
  * chargeait dans son `init`, et la barre du bas empile les onglets avec

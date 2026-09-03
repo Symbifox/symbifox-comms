@@ -58,6 +58,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.collectAsState
 import com.bluefoxconsultant.sms.data.Graph
 import com.bluefoxconsultant.sms.data.SwipeAction
+import com.bluefoxconsultant.sms.ui.RelirePendantQuOnRegarde
 import com.bluefoxconsultant.sms.ui.SwipeActionRow
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
 
@@ -72,6 +73,10 @@ fun ThreadsScreen(
     var menuOpen by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val swipe by Graph.uiPrefs.configFlow.collectAsState()
+
+    // Relire au retour sur l'onglet, au retour d'arrière-plan, puis à la
+    // minute. La liste vivait de ses seules notifications poussées.
+    RelirePendantQuOnRegarde { vm.tick() }
 
     LaunchedEffect(vm.error) {
         val message = vm.error ?: return@LaunchedEffect

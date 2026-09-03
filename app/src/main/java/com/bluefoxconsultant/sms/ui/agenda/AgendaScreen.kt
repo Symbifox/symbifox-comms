@@ -61,6 +61,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bluefoxconsultant.sms.ui.BanniereFraicheur
+import com.bluefoxconsultant.sms.ui.RelirePendantQuOnRegarde
 import com.bluefoxconsultant.sms.data.AgendaEvent
 import com.bluefoxconsultant.sms.data.Graph
 import com.bluefoxconsultant.sms.data.ThemeMode

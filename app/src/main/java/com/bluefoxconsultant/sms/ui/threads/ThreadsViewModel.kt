@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.bluefoxconsultant.sms.data.Graph
 import com.bluefoxconsultant.sms.data.Line
 import com.bluefoxconsultant.sms.data.Thread
+import com.bluefoxconsultant.sms.ui.relectureUtile
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -22,6 +23,9 @@ class ThreadsViewModel : ViewModel() {
         private set
     var firstLoadDone by mutableStateOf(false)
         private set
+
+    /** Dernière lecture RÉUSSIE. Voir `ui/Rafraichissement.kt`. */
+    private var lu = 0L
     var error by mutableStateOf<String?>(null)
         private set
 
@@ -40,18 +44,49 @@ class ThreadsViewModel : ViewModel() {
         if (lines.isEmpty()) refreshLines()
     }
 
-    fun refresh() {
-        viewModelScope.launch {
+    fun refresh() = charger(silencieux = false)
+
+    /**
+     * Le battement : au retour à l'écran, puis à la minute.
+     *
+     * La liste vivait de ses notifications poussées. Un message lu ailleurs,
+     * un fil archivé depuis le bureau ou une poussée qui n'est jamais arrivée
+     * laissaient l'écran dans son état d'il y a des heures, sans le dire.
+     *
+     * ⚠️ On ne relit pas pendant une recherche : remplacer les résultats sous
+     * les doigts de quelqu'un qui tape est pire que de les laisser dater.
+     */
+    fun tick() {
+        if (refreshing || searchActive) return
+        if (!relectureUtile(System.currentTimeMillis(), lu)) return
+        charger(silencieux = true)
+    }
+
+    /**
+     * ⚠️ [refreshing] est posé HORS de la coroutine : posé dedans, il n'existe
+     * qu'au prochain tour de la boucle d'événements, et le battement de la
+     * minute se glisse entre les deux pour lancer une seconde lecture.
+     *
+     * Une lecture silencieuse ne touche ni l'indicateur du tirer ni la
+     * bannière d'erreur : elle garde ce qui est affiché plutôt que de le
+     * remplacer par « impossible de charger » sur une coupure de deux secondes.
+     */
+    private fun charger(silencieux: Boolean) {
+        if (!silencieux) {
             refreshing = true
             error = null
+        }
+        viewModelScope.launch {
             try {
                 threads = Graph.sms.threads(
                     archived = 0,
                     lineId = selectedLineId,
                     search = searchTerm,
                 )
+                lu = System.currentTimeMillis()
+                error = null
             } catch (e: Exception) {
-                error = "Impossible de charger les messages."
+                if (!silencieux) error = "Impossible de charger les messages."
             } finally {
                 refreshing = false
                 firstLoadDone = true

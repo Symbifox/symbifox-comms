@@ -1,7 +1,9 @@
 * Calendar and tasks now refresh on their own: when you come back to the
   screen, then every minute while it is in front. Nothing refreshed them
   before, so a grid opened in the morning still showed the morning at night
-* Pull down to refresh, as in messages and mail
+* The message list does the same, rather than living on pushed notifications
+  alone
+* Pull down to refresh, in the calendar and tasks too
 * Midnight moves the grid forward: left open, it no longer stays on yesterday
 * When a refresh fails, the time of the last successful read is shown rather
   than left to guess

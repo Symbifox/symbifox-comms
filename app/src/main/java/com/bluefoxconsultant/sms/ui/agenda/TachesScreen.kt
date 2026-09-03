@@ -47,6 +47,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.bluefoxconsultant.sms.ui.BanniereFraicheur
+import com.bluefoxconsultant.sms.ui.RelirePendantQuOnRegarde
 import com.bluefoxconsultant.sms.data.AgendaTask
 import com.bluefoxconsultant.sms.data.OdooLinks
 import java.time.LocalDate
