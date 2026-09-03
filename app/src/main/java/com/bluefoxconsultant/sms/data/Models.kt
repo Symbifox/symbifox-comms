@@ -124,6 +124,9 @@ data class SendResponse(
 @Serializable
 data class ExchangeRequest(
     val code: String,
+    // The server demands it since napkin #25275 lot A. An intercepted code is
+    // worth nothing without it.
+    @SerialName("code_verifier") val codeVerifier: String,
 )
 
 @Serializable

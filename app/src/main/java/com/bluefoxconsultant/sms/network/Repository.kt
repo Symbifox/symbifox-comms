@@ -26,8 +26,8 @@ class Repository(private val api: ApiClient) {
 
     private val json = api.json
 
-    suspend fun exchange(code: String): LoginResponse = withContext(Dispatchers.IO) {
-        val body = json.encodeToString(ExchangeRequest(code))
+    suspend fun exchange(code: String, verifier: String): LoginResponse = withContext(Dispatchers.IO) {
+        val body = json.encodeToString(ExchangeRequest(code, verifier))
         json.decodeFromString(api.postJson("/auth/exchange", body))
     }
 

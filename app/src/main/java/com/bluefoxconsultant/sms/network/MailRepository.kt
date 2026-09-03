@@ -37,8 +37,9 @@ class MailRepository(private val api: ApiClient) {
 
     private fun enc(value: String): String = URLEncoder.encode(value, "UTF-8")
 
-    suspend fun exchange(code: String): MailExchangeResponse = withContext(Dispatchers.IO) {
-        json.decodeFromString(api.postJson("/auth/exchange", json.encodeToString(ExchangeRequest(code))))
+    suspend fun exchange(code: String, verifier: String): MailExchangeResponse = withContext(Dispatchers.IO) {
+        json.decodeFromString(
+            api.postJson("/auth/exchange", json.encodeToString(ExchangeRequest(code, verifier))))
     }
 
     suspend fun config(): MailConfig = withContext(Dispatchers.IO) {

@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.bluefoxconsultant.sms.data.Pkce
 import com.bluefoxconsultant.sms.data.Graph
 import com.bluefoxconsultant.sms.data.Service
 import com.bluefoxconsultant.sms.push.PushRegistrar
@@ -84,11 +85,17 @@ class AuthViewModel : ViewModel() {
     private fun openLeg(context: Context, service: Service) {
         val instance = Graph.tokenStore.instanceUrl ?: return
         val state = randomState()
-        Graph.tokenStore.savePendingLeg(service, state)
+        // One verifier per leg, never reused: the two modules issue two
+        // independent device rows, and a shared verifier would let a code
+        // caught on one leg open the exchange of the other.
+        val verifier = Pkce.verifier()
+        Graph.tokenStore.savePendingLeg(service, state, verifier)
 
         val url = service.baseUrl(instance) +
             "/auth/start?redirect=" + Uri.encode(REDIRECT) +
-            "&state=" + Uri.encode(state)
+            "&state=" + Uri.encode(state) +
+            "&code_challenge=" + Uri.encode(Pkce.challenge(verifier)) +
+            "&code_challenge_method=S256"
 
         try {
             CustomTabsIntent.Builder()
@@ -109,10 +116,11 @@ class AuthViewModel : ViewModel() {
         val state = uri?.getQueryParameter("state")
         val expected = Graph.tokenStore.pendingState
         val service = Graph.tokenStore.pendingService
+        val verifier = Graph.tokenStore.pendingVerifier
 
         // Anti-injection: reject unless state matches the one we sent for this leg.
         if (state.isNullOrBlank() || expected.isNullOrBlank() ||
-            state != expected || service == null
+            state != expected || service == null || verifier.isNullOrBlank()
         ) {
             Graph.tokenStore.clearPendingState()
             error = "Connexion échouée, réessayez."
@@ -134,13 +142,13 @@ class AuthViewModel : ViewModel() {
             try {
                 when (service) {
                     Service.SMS -> {
-                        val resp = Graph.sms.exchange(code)
+                        val resp = Graph.sms.exchange(code, verifier)
                         if (resp.token.isBlank()) throw IllegalStateException("empty token")
                         Graph.tokenStore.saveLines(resp.lines)
                         Graph.tokenStore.saveToken(service, resp.token, resp.userName)
                     }
                     Service.MAIL -> {
-                        val resp = Graph.mail.exchange(code)
+                        val resp = Graph.mail.exchange(code, verifier)
                         if (resp.token.isBlank()) throw IllegalStateException("empty token")
                         Graph.tokenStore.saveToken(service, resp.token, resp.config.userName)
                     }
@@ -177,6 +185,10 @@ class AuthViewModel : ViewModel() {
         val why = when (reason) {
             "no_mailbox" -> "aucune boîte courriel n'est configurée sur ce compte"
             "no_access" -> "ce compte n'a pas accès à ce module"
+            // Only an app older than napkin #25275 lot A can be told this, and
+            // that app has no such message. Named anyway: the day it shows up,
+            // it says which side is behind rather than "refused".
+            "pkce_required" -> "cette version de l'application est trop ancienne pour ce serveur"
             else -> "le serveur a refusé la connexion"
         }
         partial = "${service.label} indisponible : $why."

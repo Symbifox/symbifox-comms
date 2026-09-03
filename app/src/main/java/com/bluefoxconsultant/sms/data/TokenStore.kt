@@ -134,15 +134,30 @@ class TokenStore(context: Context) {
         get() = prefs.getString(KEY_PENDING_SERVICE, null)
             ?.let { k -> Service.entries.firstOrNull { it.key == k } }
 
-    fun savePendingLeg(service: Service, state: String) {
+    /**
+     * The PKCE verifier of the in-flight leg.
+     *
+     * Persisted for the same reason as the state: the Custom Tab often evicts
+     * this process, and a verifier held in a field would be gone by the time
+     * the browser comes back. It never travels through the deep link — only in
+     * the exchange body, over HTTPS.
+     */
+    val pendingVerifier: String? get() = prefs.getString(KEY_PENDING_VERIFIER, null)
+
+    fun savePendingLeg(service: Service, state: String, verifier: String) {
         prefs.edit()
             .putString(KEY_PENDING_STATE, state)
             .putString(KEY_PENDING_SERVICE, service.key)
+            .putString(KEY_PENDING_VERIFIER, verifier)
             .apply()
     }
 
     fun clearPendingState() {
-        prefs.edit().remove(KEY_PENDING_STATE).remove(KEY_PENDING_SERVICE).apply()
+        prefs.edit()
+            .remove(KEY_PENDING_STATE)
+            .remove(KEY_PENDING_SERVICE)
+            .remove(KEY_PENDING_VERIFIER)
+            .apply()
     }
 
     // ---- send-from lines / numbers (SMS only) ----
@@ -188,6 +203,7 @@ class TokenStore(context: Context) {
         const val KEY_INSTANCE = "instance_url"
         const val KEY_PENDING_STATE = "pending_state"
         const val KEY_PENDING_SERVICE = "pending_service"
+        const val KEY_PENDING_VERIFIER = "pending_verifier"
         const val KEY_LINES = "lines"
         const val KEY_THEME = "theme_mode"
         const val KEY_AVAILABLE = "available_services"

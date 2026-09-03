@@ -1,0 +1,9 @@
+* Pairing a phone is now bound to the app that started it. A custom app scheme
+  is not exclusive on Android: another app could declare the same return link,
+  receive the pairing code instead of Comms, and trade it for access to your
+  messages and your mailbox. An intercepted code is now worth nothing without a
+  secret that never leaves this app
+* Nothing to redo if your phone is already connected: paired devices keep their
+  access and do not go through pairing again
+* An updated instance now demands that secret, and refuses a pairing started
+  from an older release than this one. An older instance keeps working as before

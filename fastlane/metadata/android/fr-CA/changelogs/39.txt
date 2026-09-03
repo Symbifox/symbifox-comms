@@ -1,0 +1,11 @@
+* L'appariement d'un téléphone est maintenant lié à l'application qui l'a
+  lancé. Un schéma d'application n'est pas exclusif sur Android : une autre app
+  pouvait déclarer le même lien de retour, recevoir le code d'appariement à la
+  place de Comms, et l'échanger contre un accès à vos messages et à votre boîte
+  courriel. Le code intercepté ne vaut plus rien sans un secret qui, lui, ne
+  quitte jamais l'application
+* Rien à refaire si votre téléphone est déjà connecté : les appareils appariés
+  gardent leur accès et ne repassent pas par l'appariement
+* Une instance mise à jour exige désormais ce secret, et refuse un appariement
+  lancé depuis une version antérieure à celle-ci. Une instance plus ancienne,
+  elle, continue de fonctionner comme avant
