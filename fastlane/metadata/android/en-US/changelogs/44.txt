@@ -1,0 +1,6 @@
+* New icon and new name: Symbifox Mobile
+* Dark background fixed on calendar and tasks: the window's white showed
+  through, which made task text nearly unreadable
+* Meeting blocks no longer overlap: title, time and badges are stacked,
+  and what fits depends on the block's height
+* "Today" no longer wraps onto two lines in the header

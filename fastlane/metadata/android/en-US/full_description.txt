@@ -1,6 +1,9 @@
-Mobile client for the Symbifox modules for Odoo. Your instance's calendar,
-deadlines, email and texts in a single app, with sorting, filing and routing
-done on the server rather than on the phone.
+Your Odoo working day on the phone: meetings, deadlines, email and texts from
+your instance in a single app.
+
+Mobile client for the Symbifox modules. Sorting, filing and routing happen on
+the server rather than on the phone, so what you see here is what your desk
+sees, at the same moment.
 
 Features:
 

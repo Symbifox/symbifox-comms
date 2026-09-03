@@ -26,12 +26,14 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -99,8 +101,28 @@ fun AgendaScreen(onOpenTasks: () -> Unit) {
         hauteurPrecedente = vm.hourHeight
     }
 
-    Box(Modifier.fillMaxSize()) {
-    Column(Modifier.fillMaxSize()) {
+    // 🔴 Un `Scaffold`, comme tous les autres écrans. Sans lui, rien ne peint le
+    // fond : c'est celui de la fenêtre Android qui traverse, blanc, et le texte
+    // prévu pour un fond sombre devient illisible dessus. Le bouton d'ajout y
+    // passe aussi, plutôt que d'être aligné à la main dans une Box.
+    Scaffold(
+        // ⚠️ La couleur est POSÉE, pas héritée d'un défaut de la bibliothèque.
+        // Le fond blanc venait déjà d'une couleur que personne n'avait choisie ;
+        // s'en remettre au `containerColor` implicite de Scaffold serait
+        // reprendre le même pari avec un autre dé.
+        containerColor = MaterialTheme.colorScheme.background,
+        contentColor = MaterialTheme.colorScheme.onBackground,
+        floatingActionButton = {
+            FloatingActionButton(onClick = { vm.openComposer() }) {
+                Icon(Icons.Filled.Add, contentDescription = "Nouvelle rencontre")
+            }
+        },
+    ) { insets ->
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(insets),
+    ) {
         AgendaHeader(vm)
         FuseauAvertissement(vm.config.userTz, vm.zone)
         vm.error?.let { message ->
@@ -171,17 +193,6 @@ fun AgendaScreen(onOpenTasks: () -> Unit) {
         }
     }
 
-        // ⚠️ Posé PAR-DESSUS la grille et non dans l'en-tête : l'en-tête est
-        // déjà chargé de deux rangées, et un bouton de plus y aurait rétréci
-        // le titre de la période.
-        FloatingActionButton(
-            onClick = { vm.openComposer() },
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(16.dp),
-        ) {
-            Icon(Icons.Filled.Add, contentDescription = "Nouvelle rencontre")
-        }
     }
 
     if (vm.composing) {
@@ -255,7 +266,12 @@ private fun AgendaHeader(vm: AgendaViewModel) {
                 )
                 Spacer(Modifier.weight(1f))
                 BoutonTheme()
-                TextButton(onClick = { vm.today() }) { Text("Aujourd'hui") }
+                // ⚠️ Un pictogramme et non « Aujourd'hui » : depuis l'ajout du
+                // troisième mode et du bouton de thème, le libellé repassait à
+                // la ligne et coupait le mot en deux.
+                IconButton(onClick = { vm.today() }) {
+                    Icon(Icons.Filled.Today, contentDescription = "Aujourd'hui")
+                }
             }
         }
     }
@@ -449,41 +465,51 @@ private fun PlacerLesRencontres(
                     .padding(horizontal = 3.dp, vertical = 1.dp),
             ) {
                 val encre = couleurDuTexte(seg.event)
-                Column {
-                    Text(
-                        seg.event.name,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontSize = 10.sp,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        color = encre,
-                    )
-                    if (seg.durationMinutes >= 45) {
-                        Text(
-                            heure(seg.event, zone),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontSize = 9.sp,
-                            color = encre,
-                        )
-                    }
-                }
-                // Les pastilles disent d'un coup d'œil ce que la rencontre
-                // porte : ordre du jour, compte rendu, rappel reporté, et le
-                // trait qui marque une rencontre dispensée d'OdJ.
+                // 🔴 Tout est EMPILÉ, rien n'est superposé. La pastille était
+                // posée en bas à droite par-dessus la colonne de texte : sur un
+                // bloc court, le titre, l'heure et « OdJ CR » se chevauchaient
+                // et devenaient illisibles tous les trois.
+                //
+                // Ce qui rentre est décidé par la HAUTEUR : une ligne tient
+                // dans une quinzaine de minutes, et promettre trois lignes dans
+                // un bloc d'un quart d'heure revient à n'en montrer aucune.
+                val lignes = (seg.durationMinutes / 15).coerceIn(1, 4)
                 val pastille = buildString {
                     if (seg.event.hasAgenda) append("OdJ ")
                     if (seg.event.hasMinutes) append("CR ")
                     if (seg.event.snoozedUntil != null) append("⏰ ")
                     if (seg.event.skipAgenda) append("—")
-                }
-                if (pastille.isNotBlank()) {
+                }.trim()
+                Column {
                     Text(
-                        pastille.trim(),
-                        Modifier.align(Alignment.BottomEnd),
+                        seg.event.name,
                         style = MaterialTheme.typography.labelSmall,
-                        fontSize = 8.sp,
+                        fontSize = 10.sp,
+                        lineHeight = 12.sp,
+                        maxLines = if (lignes >= 3) 2 else 1,
+                        overflow = TextOverflow.Ellipsis,
                         color = encre,
                     )
+                    if (lignes >= 3) {
+                        Text(
+                            heure(seg.event, zone),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 9.sp,
+                            lineHeight = 11.sp,
+                            maxLines = 1,
+                            color = encre,
+                        )
+                    }
+                    if (lignes >= 4 && pastille.isNotBlank()) {
+                        Text(
+                            pastille,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 8.sp,
+                            lineHeight = 10.sp,
+                            maxLines = 1,
+                            color = encre.copy(alpha = 0.75f),
+                        )
+                    }
                 }
             }
         }

@@ -1,6 +1,9 @@
-Client mobile des modules Symbifox pour Odoo. L'agenda, les échéances, les
-courriels et les textos de votre instance dans une seule application, avec le
-tri, le classement et le routage faits côté serveur plutôt que sur le téléphone.
+Votre journée de travail Odoo sur le téléphone : les rencontres, les échéances,
+les courriels et les textos de votre instance dans une seule application.
+
+Client mobile des modules Symbifox. Le tri, le classement et le routage se font
+côté serveur plutôt que sur le téléphone, donc ce que vous voyez ici est ce que
+voit votre poste de travail, au même instant.
 
 Fonctions :
 

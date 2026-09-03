@@ -1,0 +1,6 @@
+* Nouvelle icône et nouveau nom : Symbifox Mobile
+* Fond sombre corrigé sur l'agenda et les tâches : le blanc de la fenêtre
+  traversait, et le texte des tâches en devenait presque illisible
+* Les blocs de rencontres ne se chevauchent plus : titre, heure et pastilles
+  sont empilés, et ce qui rentre dépend de la hauteur du bloc
+* « Aujourd'hui » ne se coupe plus en deux dans l'en-tête

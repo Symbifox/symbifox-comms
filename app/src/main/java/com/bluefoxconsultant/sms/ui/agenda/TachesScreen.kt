@@ -28,6 +28,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -63,8 +64,27 @@ fun TachesScreen() {
     val vm: TachesViewModel = viewModel()
     val context = LocalContext.current
 
-    Box(Modifier.fillMaxSize()) {
-    Column(Modifier.fillMaxSize()) {
+    // 🔴 Un `Scaffold`, comme tous les autres écrans. Sans lui rien ne peint le
+    // fond : celui de la fenêtre Android traversait, blanc, et le texte des
+    // tâches — prévu pour un fond sombre — devenait presque invisible dessus.
+    Scaffold(
+        // ⚠️ La couleur est POSÉE, pas héritée d'un défaut de la bibliothèque.
+        // Le fond blanc venait déjà d'une couleur que personne n'avait choisie ;
+        // s'en remettre au `containerColor` implicite de Scaffold serait
+        // reprendre le même pari avec un autre dé.
+        containerColor = MaterialTheme.colorScheme.background,
+        contentColor = MaterialTheme.colorScheme.onBackground,
+        floatingActionButton = {
+            FloatingActionButton(onClick = { vm.openComposer() }) {
+                Icon(Icons.Filled.Add, contentDescription = "Nouvelle tâche")
+            }
+        },
+    ) { insets ->
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(insets),
+    ) {
         Surface(tonalElevation = 2.dp) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
@@ -159,12 +179,6 @@ fun TachesScreen() {
         }
     }
 
-        FloatingActionButton(
-            onClick = { vm.openComposer() },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-        ) {
-            Icon(Icons.Filled.Add, contentDescription = "Nouvelle tâche")
-        }
     }
 
     vm.selected?.let { task ->
