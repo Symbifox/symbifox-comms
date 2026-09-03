@@ -1,9 +1,11 @@
 package com.bluefoxconsultant.sms.ui.genfox
 
 import android.content.Context
+import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.bluefoxconsultant.sms.audio.Earcons
 import com.bluefoxconsultant.sms.audio.Speaker
 import com.bluefoxconsultant.sms.audio.VoiceRecorder
 import com.bluefoxconsultant.sms.data.Graph
@@ -26,6 +28,11 @@ enum class HandsFreeState { Off, Listening, Sending, Waiting, Speaking }
  *
  * Nothing here is automatic in the background. The loop only runs while the
  * screen is open and the toggle is on, and any tap turns it off.
+ *
+ * Chaque changement d'étape s'entend et se date. En mains libres on ne regarde
+ * pas l'écran : sans un son au moment où le micro se ferme, et sans un compteur
+ * qui avance pendant la transcription, l'attente se lit comme une panne — c'est
+ * exactement ce qui a été rapporté du premier essai sur le terrain.
  */
 class HandsFreeController(
     context: Context,
@@ -37,9 +44,30 @@ class HandsFreeController(
     var state by mutableStateOf(HandsFreeState.Off)
         private set
 
+    /**
+     * Ce que la transcription a rendu du dernier tour, affiché tel quel.
+     *
+     * C'est la réponse à « on n'est pas certains que Gen a compris » : la bulle
+     * de la question finit par le dire, mais seulement une fois le tour parti.
+     * Ici le texte paraît dès qu'il existe, sous les yeux de qui attend.
+     */
+    var heard by mutableStateOf<String?>(null)
+        private set
+
+    /** Horloge du début de l'étape en cours, pour afficher un compteur qui avance. */
+    var phaseSince by mutableStateOf(SystemClock.elapsedRealtime())
+        private set
+
     private val recorder = VoiceRecorder(context)
     private val speaker = Speaker(context)
+    private val earcons = Earcons()
     private var loopJob: Job? = null
+
+    /** Change d'étape et remet le compteur à zéro : les deux vont ensemble. */
+    private fun enter(next: HandsFreeState) {
+        state = next
+        phaseSince = SystemClock.elapsedRealtime()
+    }
 
     val isOn: Boolean get() = state != HandsFreeState.Off
 
@@ -54,13 +82,14 @@ class HandsFreeController(
         speaker.onSpoken(null)
         speaker.stop()
         recorder.cancel()
-        state = HandsFreeState.Off
+        heard = null
+        enter(HandsFreeState.Off)
     }
 
     /** The answer landed: say it, then reopen the microphone. */
     fun answered(text: String) {
         if (!isOn) return
-        state = HandsFreeState.Speaking
+        enter(HandsFreeState.Speaking)
         speaker.onSpoken {
             // Called on the engine's thread — hop back onto the scope before
             // touching state or starting a recording.
@@ -72,12 +101,13 @@ class HandsFreeController(
     /** The turn failed: say nothing more, and stand down rather than loop on it. */
     fun failed() {
         if (!isOn) return
+        earcons.standDown()
         onNotice("L'assistant n'a pas répondu — mode mains libres arrêté.")
         stop()
     }
 
     fun waiting() {
-        if (isOn) state = HandsFreeState.Waiting
+        if (isOn && state != HandsFreeState.Waiting) enter(HandsFreeState.Waiting)
     }
 
     /**
@@ -94,14 +124,22 @@ class HandsFreeController(
 
     private fun listen() {
         loopJob?.cancel()
-        if (!recorder.start()) {
-            onNotice("Le micro n'est pas disponible.")
-            stop()
-            return
-        }
-        state = HandsFreeState.Listening
+        this.heard = null
+        enter(HandsFreeState.Listening)
         loopJob = scope.launch {
-            var heard = false
+            // ⚠️ Le bip d'ouverture doit avoir FINI avant que le micro s'ouvre.
+            // Sinon la boucle s'entend elle-même : le bip passe le seuil de
+            // parole, `spoke` devient vrai sans que personne ait parlé, et deux
+            // secondes de silence plus tard on envoie l'enregistrement d'une
+            // pièce vide se faire transcrire.
+            earcons.yourTurn()
+            delay(BEEP_GUARD_MS)
+            if (!recorder.start()) {
+                onNotice("Le micro n'est pas disponible.")
+                stop()
+                return@launch
+            }
+            var spoke = false
             var quiet = 0
             var elapsed = 0L
             while (elapsed < MAX_LISTEN_MS) {
@@ -109,35 +147,44 @@ class HandsFreeController(
                 elapsed += POLL_MS
                 val level = recorder.amplitude()
                 if (level > SPEECH_LEVEL) {
-                    heard = true
+                    spoke = true
                     quiet = 0
-                } else if (heard && level < SILENCE_LEVEL) {
+                } else if (spoke && level < SILENCE_LEVEL) {
                     quiet++
                     if (quiet >= QUIET_POLLS) break
                 }
             }
             val file = recorder.stop()
-            if (!heard || file == null) {
+            if (!spoke || file == null) {
                 // Heard nothing at all: the person is not talking to it. Stand
                 // down instead of recording the room in a loop.
+                earcons.standDown()
                 onNotice("Rien entendu — mode mains libres arrêté.")
                 stop()
                 return@launch
             }
-            state = HandsFreeState.Sending
+            // Le micro vient de se fermer sur le silence. C'est le seul moment
+            // de la boucle qu'on ne peut pas deviner sans regarder l'écran, et
+            // le plus long attend juste après : il s'entend.
+            earcons.captured()
+            enter(HandsFreeState.Sending)
             try {
                 val text = Graph.speech.transcribe(file)
                 if (text.isBlank()) {
+                    earcons.standDown()
                     onNotice("Rien n'a été compris.")
                     stop()
                 } else {
-                    state = HandsFreeState.Waiting
+                    this@HandsFreeController.heard = text
+                    enter(HandsFreeState.Waiting)
                     onQuestion(text)
                 }
             } catch (e: ApiException) {
+                earcons.standDown()
                 onNotice(e.err)
                 stop()
             } catch (e: Exception) {
+                earcons.standDown()
                 onNotice("Transcription impossible.")
                 stop()
             } finally {
@@ -149,6 +196,7 @@ class HandsFreeController(
     fun release() {
         stop()
         speaker.release()
+        earcons.release()
     }
 
     private companion object {
@@ -157,5 +205,6 @@ class HandsFreeController(
         const val MAX_LISTEN_MS = 30_000L
         const val SPEECH_LEVEL = 2_000
         const val SILENCE_LEVEL = 1_200
+        const val BEEP_GUARD_MS = 250L      // le bip d'ouverture s'éteint avant le micro
     }
 }

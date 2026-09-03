@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.Hearing
 import androidx.compose.material.icons.filled.HeadsetMic
 import androidx.compose.material.icons.filled.VolumeUp
@@ -42,6 +44,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -57,6 +60,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -64,11 +68,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import android.Manifest
+import android.os.SystemClock
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -81,6 +88,7 @@ import com.bluefoxconsultant.sms.data.GenfoxTool
 import com.bluefoxconsultant.sms.ui.speech.DictateButton
 import com.bluefoxconsultant.sms.ui.speech.appendSpoken
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -247,7 +255,11 @@ fun GenfoxScreen(
                     }
                 }
             }
-            if (handsFree.isOn) HandsFreeBand(handsFree.state)
+            if (handsFree.isOn) HandsFreeBand(
+                state = handsFree.state,
+                heard = handsFree.heard,
+                phaseSince = handsFree.phaseSince,
+            )
             Asker(asking = vm.asking, snackbar = snackbar, onAsk = vm::ask)
         }
     }
@@ -547,31 +559,85 @@ private fun Asker(
     }
 }
 
+/**
+ * La bande d'état du mode mains libres.
+ *
+ * Elle porte trois choses que le premier essai sur le terrain a réclamées : le
+ * temps écoulé dans l'étape en cours (une transcription qui prend vingt
+ * secondes sans rien bouger se lit comme un gel), une barre qui avance pendant
+ * que Gen travaille, et le texte compris — la seule façon de savoir, avant que
+ * la réponse arrive, que la question posée est bien celle qu'on a dite.
+ *
+ * Le compteur est remis à zéro par [phaseSince] plutôt que par un `remember`
+ * sur l'étape : deux tours de suite passent par le même état, et un `remember`
+ * clé sur l'énumération ne verrait pas le second commencer.
+ */
 @Composable
-private fun HandsFreeBand(state: HandsFreeState) {
+private fun HandsFreeBand(state: HandsFreeState, heard: String?, phaseSince: Long) {
     val label = when (state) {
         HandsFreeState.Listening -> "J'écoute — parlez, je m'arrête au silence"
-        HandsFreeState.Sending -> "Transcription…"
-        HandsFreeState.Waiting -> "Gen cherche…"
-        HandsFreeState.Speaking -> "Réponse à voix haute…"
+        HandsFreeState.Sending -> "Transcription de ce que vous venez de dire"
+        HandsFreeState.Waiting -> "Gen réfléchit"
+        HandsFreeState.Speaking -> "Réponse à voix haute"
         HandsFreeState.Off -> ""
     }
     if (label.isBlank()) return
+
+    // Le décompte des secondes n'a de sens que pendant une attente : pendant
+    // qu'on parle ou que le téléphone parle, il ne ferait que presser.
+    val counts = state == HandsFreeState.Sending || state == HandsFreeState.Waiting
+    var seconds by remember(phaseSince) { mutableIntStateOf(0) }
+    LaunchedEffect(phaseSince, counts) {
+        if (!counts) return@LaunchedEffect
+        while (true) {
+            delay(1_000)
+            seconds = ((SystemClock.elapsedRealtime() - phaseSince) / 1_000).toInt()
+        }
+    }
+
     Surface(color = BrandAccent) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                Icons.Filled.Hearing,
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(16.dp),
-            )
-            Spacer(Modifier.width(10.dp))
-            Text(label, color = Color.White, fontSize = 13.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    if (counts) Icons.Filled.HourglassTop else Icons.Filled.Hearing,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(label, color = Color.White, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                if (counts && seconds > 0) Text(
+                    "$seconds s",
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            // Ce qui a été compris, dès que ça existe — donc pendant que Gen
+            // réfléchit, pas seulement quand il a fini.
+            if (!heard.isNullOrBlank() && state != HandsFreeState.Listening) {
+                Spacer(Modifier.size(4.dp))
+                Text(
+                    "« $heard »",
+                    color = Color.White.copy(alpha = 0.9f),
+                    fontSize = 12.sp,
+                    fontStyle = FontStyle.Italic,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (counts) {
+                Spacer(Modifier.size(6.dp))
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().height(2.dp),
+                    color = Color.White,
+                    trackColor = Color.White.copy(alpha = 0.3f),
+                )
+            }
         }
     }
 }
