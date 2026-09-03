@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -32,6 +33,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
@@ -62,7 +64,9 @@ import com.bluefoxconsultant.sms.data.ShareIntake
 import com.bluefoxconsultant.sms.data.SharedContent
 import com.bluefoxconsultant.sms.sip.CallGap
 import com.bluefoxconsultant.sms.sip.rememberCallGaps
+import com.bluefoxconsultant.sms.sip.cheminReglage
 import com.bluefoxconsultant.sms.sip.settingsIntentFor
+import com.bluefoxconsultant.sms.sip.tairePourToujours
 import com.bluefoxconsultant.sms.sip.SipEngine
 import com.bluefoxconsultant.sms.data.Service
 import com.bluefoxconsultant.sms.push.Notifier
@@ -719,18 +723,25 @@ private fun HostingBanner(alerts: com.bluefoxconsultant.sms.data.HostingAlerts) 
  * jamais, donc les appels sont manqués aujourd'hui. Ambre pour l'hibernation :
  * tout marche, mais Android peut l'éteindre après des mois sans usage. Tout
  * peindre en rouge finit par rendre le rouge illisible.
+ *
+ * ⚠️ La bannière NOMME le réglage. Les deux manques vivent dans deux écrans
+ * différents, et régler le premier fait apparaître le second : sans le nom, ça
+ * se lit « la bannière n'est pas partie ». Et elle se laisse taire, parce que
+ * le système répond parfois faux à une question déjà réglée.
  */
 @Composable
 private fun CallGapBanner(gap: CallGap) {
     val context = LocalContext.current
     val down = gap == CallGap.FULL_SCREEN
+    var deplie by remember(gap) { mutableStateOf(false) }
+    var tue by remember(gap) { mutableStateOf(false) }
+    if (tue) return
+
     Surface(color = if (down) AlertRed else AlertAmber) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable {
-                    runCatching { context.startActivity(settingsIntentFor(context, gap)) }
-                }
+                .clickable { deplie = !deplie }
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         ) {
             Text(
@@ -743,15 +754,48 @@ private fun CallGapBanner(gap: CallGap) {
             Text(
                 if (down) {
                     "Android n'autorise pas l'écran d'appel par-dessus le " +
-                        "verrouillage. Toucher pour l'autoriser."
+                        "verrouillage."
                 } else {
                     "Android met l'app en pause si elle reste inutilisée, et " +
-                        "plus rien ne lui parvient. Toucher pour l'en exempter."
+                        "plus rien ne lui parvient."
                 },
                 color = Color.White.copy(alpha = 0.9f),
                 fontSize = 12.sp,
                 modifier = Modifier.padding(top = 3.dp),
             )
+            if (deplie) {
+                Text(
+                    cheminReglage(gap),
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+                Row(
+                    modifier = Modifier.padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    TextButton(
+                        onClick = {
+                            // ⚠️ L'intention peut ne résoudre AUCUNE activité.
+                            // On le dit plutôt que d'avaler l'échec : toucher
+                            // sans que rien ne se passe faisait croire que le
+                            // réglage avait été posé.
+                            val intent = settingsIntentFor(context, gap)
+                            if (intent == null) {
+                                deplie = true
+                            } else {
+                                runCatching { context.startActivity(intent) }
+                            }
+                        },
+                    ) { Text("Ouvrir le réglage", color = Color.White, fontSize = 12.sp) }
+                    TextButton(
+                        onClick = {
+                            tairePourToujours(context, gap)
+                            tue = true
+                        },
+                    ) { Text("C'est déjà réglé", color = Color.White, fontSize = 12.sp) }
+                }
+            }
         }
     }
 }

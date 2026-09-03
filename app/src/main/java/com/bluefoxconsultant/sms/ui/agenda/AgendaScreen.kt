@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -34,6 +35,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
@@ -48,6 +50,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.delay
 import com.bluefoxconsultant.sms.data.AgendaEvent
 import java.time.LocalDate
 import java.time.ZoneId
@@ -112,6 +115,18 @@ fun AgendaScreen(onOpenTasks: () -> Unit) {
         }
 
         val days = vm.days
+        if (vm.mode == AgendaMode.LIST) {
+            Box(Modifier.weight(1f)) {
+                VueListe(days, vm.events, vm.taskCounts, vm.zone,
+                    onOpen = { vm.open(it) }, onOpenTasks = onOpenTasks)
+                if (vm.loading) {
+                    CircularProgressIndicator(
+                        Modifier.align(Alignment.TopCenter).padding(top = 8.dp).size(22.dp),
+                        strokeWidth = 2.dp,
+                    )
+                }
+            }
+        } else {
         JoursEnTete(days, vm.taskCounts, vm.zone, onOpenTasks)
         JourneeEntiere(days, vm.events, vm.zone) { vm.open(it) }
 
@@ -132,6 +147,11 @@ fun AgendaScreen(onOpenTasks: () -> Unit) {
                         PlacerLesRencontres(day, vm.events, vm.zone, hauteurHeure) {
                             vm.open(it)
                         }
+                        // Posé APRÈS les rencontres pour passer par-dessus :
+                        // dessiné avant, le trait disparaîtrait sous le bloc
+                        // de la rencontre en cours, c'est-à-dire précisément
+                        // au moment où on le cherche.
+                        TraitDeMaintenant(day, vm.zone, hauteurHeure)
                     }
                 }
             }
@@ -141,6 +161,7 @@ fun AgendaScreen(onOpenTasks: () -> Unit) {
                     strokeWidth = 2.dp,
                 )
             }
+        }
         }
     }
 
@@ -220,6 +241,11 @@ private fun AgendaHeader(vm: AgendaViewModel) {
                     selected = vm.mode == AgendaMode.WEEK,
                     onClick = { vm.switchMode(AgendaMode.WEEK) },
                     label = { Text("Semaine") },
+                )
+                FilterChip(
+                    selected = vm.mode == AgendaMode.LIST,
+                    onClick = { vm.switchMode(AgendaMode.LIST) },
+                    label = { Text("Liste") },
                 )
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = { vm.today() }) { Text("Aujourd'hui") }
@@ -504,3 +530,54 @@ private fun titre(days: List<LocalDate>): String {
     if (days.size == 1) return jour.format(days.first()).replaceFirstChar { it.uppercase() }
     return "${court.format(days.first())} – ${court.format(days.last())} ${days.last().year}"
 }
+
+
+/**
+ * Le trait rouge de l'heure courante, comme dans la vue Calendrier d'Odoo.
+ *
+ * ⚠️ Il ne se dessine que sur la colonne d'AUJOURD'HUI, dans le fuseau de
+ * l'appareil, celui que la grille affiche. Le poser sur chaque colonne en
+ * ferait une décoration : ce qu'on lit dans ce trait, c'est « où j'en suis »,
+ * pas « quelle heure il est ».
+ *
+ * L'heure est relue chaque minute. Un trait figé à l'ouverture serait faux dès
+ * la minute suivante, et faux sans le dire.
+ */
+@Composable
+private fun TraitDeMaintenant(day: LocalDate, zone: ZoneId, hauteurHeure: Dp) {
+    if (day != LocalDate.now(zone)) return
+
+    var minutes by remember { mutableIntStateOf(minutesDepuisMinuit(zone)) }
+    LaunchedEffect(zone) {
+        while (true) {
+            minutes = minutesDepuisMinuit(zone)
+            // Calé sur le début de la minute suivante plutôt que sur un délai
+            // fixe : un réveil toutes les 60 s dérive et finit par sauter des
+            // minutes entières.
+            delay(((60 - (System.currentTimeMillis() / 1000 % 60)) * 1000L).coerceAtLeast(1000L))
+        }
+    }
+
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .offset(y = hauteurHeure * (minutes / 60f) - 1.dp)
+            .height(2.dp)
+            .background(TraitMaintenant),
+    )
+    Box(
+        Modifier
+            .offset(y = hauteurHeure * (minutes / 60f) - 4.dp)
+            .size(8.dp)
+            .clip(CircleShape)
+            .background(TraitMaintenant),
+    )
+}
+
+private fun minutesDepuisMinuit(zone: ZoneId): Int {
+    val maintenant = java.time.ZonedDateTime.now(zone)
+    return maintenant.hour * 60 + maintenant.minute
+}
+
+/** Le rouge d'Odoo pour l'heure courante, pas celui des erreurs du thème. */
+private val TraitMaintenant = Color(0xFFEA4335)

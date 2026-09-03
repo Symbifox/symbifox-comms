@@ -16,7 +16,21 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.TemporalAdjusters
 
-enum class AgendaMode { DAY, WEEK }
+private const val LIST_DAYS = 20L
+
+enum class AgendaMode {
+    DAY,
+    WEEK,
+
+    /**
+     * La liste : les mêmes événements, à la file, sans grille horaire.
+     *
+     * Elle n'est pas un repli de la semaine, c'est une autre façon de lire.
+     * Sur un agenda peu dense — 9 rencontres sur quatorze jours ici — la grille
+     * montre surtout du vide, et la liste montre surtout les rencontres.
+     */
+    LIST,
+}
 
 /**
  * La grille, et ce qu'il faut pour la remplir.
@@ -80,6 +94,9 @@ class AgendaViewModel : ViewModel() {
                 val monday = anchor.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
                 (0L..6L).map { monday.plusDays(it) }
             }
+            // La liste part du jour d'ancrage et regarde devant : chercher
+            // dans le passé est le travail de la vue jour.
+            AgendaMode.LIST -> (0L..LIST_DAYS).map { anchor.plusDays(it) }
         }
 
     fun switchMode(next: AgendaMode) {
@@ -89,7 +106,11 @@ class AgendaViewModel : ViewModel() {
     }
 
     fun step(forward: Boolean) {
-        val delta = if (mode == AgendaMode.DAY) 1L else 7L
+        val delta = when (mode) {
+            AgendaMode.DAY -> 1L
+            AgendaMode.WEEK -> 7L
+            AgendaMode.LIST -> LIST_DAYS
+        }
         anchor = if (forward) anchor.plusDays(delta) else anchor.minusDays(delta)
         load()
     }
