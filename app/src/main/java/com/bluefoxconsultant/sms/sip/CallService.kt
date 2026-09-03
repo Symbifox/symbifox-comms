@@ -69,7 +69,7 @@ class CallService : Service() {
         return NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_sms)
             .setContentTitle("Appel en cours")
-            .setContentText(peer.ifBlank { "Symbifox Comms" })
+            .setContentText(peer.ifBlank { "Symbifox Mobile" })
             .setContentIntent(open)
             .setOngoing(true)
             .setSilent(true)

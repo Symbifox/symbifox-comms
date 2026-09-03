@@ -23,6 +23,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.BrightnessAuto
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
@@ -51,7 +54,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bluefoxconsultant.sms.data.AgendaEvent
+import com.bluefoxconsultant.sms.data.Graph
+import com.bluefoxconsultant.sms.data.ThemeMode
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -248,6 +254,7 @@ private fun AgendaHeader(vm: AgendaViewModel) {
                     label = { Text("Liste") },
                 )
                 Spacer(Modifier.weight(1f))
+                BoutonTheme()
                 TextButton(onClick = { vm.today() }) { Text("Aujourd'hui") }
             }
         }
@@ -581,3 +588,31 @@ private fun minutesDepuisMinuit(zone: ZoneId): Int {
 
 /** Le rouge d'Odoo pour l'heure courante, pas celui des erreurs du thème. */
 private val TraitMaintenant = Color(0xFFEA4335)
+
+
+/**
+ * Le thème, en un geste, là où l'on passe ses journées.
+ *
+ * Il existe déjà dans Réglages, en trois choix explicites ; ce bouton n'est pas
+ * une seconde vérité, il écrit la MÊME préférence. Ce qu'il ajoute est la
+ * portée : personne ne va dans Réglages pour changer la luminosité d'un écran
+ * qu'il regarde en ce moment.
+ *
+ * Le cycle est sombre → clair → système, dans cet ordre, parce que le défaut
+ * est sombre et qu'un cycle qui commence ailleurs oblige à deux appuis pour
+ * revenir d'où l'on vient.
+ */
+@Composable
+private fun BoutonTheme() {
+    val mode by Graph.tokenStore.themeModeFlow.collectAsStateWithLifecycle()
+    IconButton(onClick = { Graph.tokenStore.saveThemeMode(mode.suivant()) }) {
+        Icon(
+            imageVector = when (mode) {
+                ThemeMode.DARK -> Icons.Filled.DarkMode
+                ThemeMode.LIGHT -> Icons.Filled.LightMode
+                ThemeMode.SYSTEM -> Icons.Filled.BrightnessAuto
+            },
+            contentDescription = "Thème : " + mode.libelle,
+        )
+    }
+}

@@ -1,0 +1,9 @@
+* The app is now Symbifox Mobile: calendar and tasks joined email and texts,
+  and "Comms" described only a third of what it does
+* Dark theme by default, in the connected instance's colours
+* Theme button in the calendar header: dark, light, system
+* Calendar: red current-time line, and a third view as a list
+* Tasks: lighter section headers, priority as a star, overdue deadlines
+  highlighted, projects ordered by most recently worked in
+* The call banner names the exact setting and can be silenced when the system
+  reports it wrongly

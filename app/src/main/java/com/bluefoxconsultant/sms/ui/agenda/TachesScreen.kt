@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
@@ -39,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bluefoxconsultant.sms.data.AgendaTask
 import com.bluefoxconsultant.sms.data.OdooLinks
@@ -110,7 +112,7 @@ fun TachesScreen() {
 
         LazyColumn(Modifier.fillMaxSize()) {
             if (vm.overdue.isNotEmpty()) {
-                item { Entete("En retard (${vm.overdue.size})", alerte = true) }
+                item { Entete("En retard", vm.overdue.size, alerte = true) }
                 items(vm.overdue, key = { "r" + it.id }) { task ->
                     LigneTache(task, vm.zone, vm.busy,
                         onComplete = { vm.complete(task, it) },
@@ -118,7 +120,7 @@ fun TachesScreen() {
                 }
             }
 
-            item { Entete("À venir (${vm.window.size})") }
+            item { Entete("À venir", vm.window.size) }
             if (vm.window.isEmpty()) {
                 item {
                     Text(
@@ -191,18 +193,50 @@ fun TachesScreen() {
     }
 }
 
+/**
+ * L'en-tête d'un seau.
+ *
+ * ⚠️ Le compte est une pastille, pas une parenthèse dans le titre. « En retard
+ * (12) » se lit comme un titre ; une pastille rouge portant 12 se lit comme
+ * une quantité, ce qui est l'information qu'on cherche en ouvrant cet écran.
+ * Et la barre pleine d'un bout à l'autre est remplacée par un fond discret :
+ * peindre toute la largeur en rouge pour trois tâches en retard rendait le
+ * rouge illisible partout ailleurs.
+ */
 @Composable
-private fun Entete(titre: String, alerte: Boolean = false) {
-    Surface(
-        color = if (alerte) MaterialTheme.colorScheme.errorContainer
-        else MaterialTheme.colorScheme.surfaceVariant,
+private fun Entete(titre: String, compte: Int, alerte: Boolean = false) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
-            titre,
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-            style = MaterialTheme.typography.labelLarge,
-            color = if (alerte) MaterialTheme.colorScheme.onErrorContainer
+            titre.uppercase(),
+            style = MaterialTheme.typography.labelSmall,
+            letterSpacing = 0.8.sp,
+            color = if (alerte) MaterialTheme.colorScheme.error
             else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (compte > 0) {
+            Surface(
+                color = if (alerte) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(8.dp),
+            ) {
+                Text(
+                    "$compte",
+                    Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (alerte) MaterialTheme.colorScheme.onError
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        HorizontalDivider(
+            Modifier.weight(1f),
+            color = MaterialTheme.colorScheme.outlineVariant,
         )
     }
 }
@@ -248,7 +282,12 @@ private fun LigneTache(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (task.priority != "0") {
-                    Text("★ ", style = MaterialTheme.typography.bodySmall)
+                    Icon(
+                        Icons.Filled.Star,
+                        contentDescription = "Prioritaire",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(14.dp).padding(end = 4.dp),
+                    )
                 }
                 Text(
                     task.name,
@@ -258,11 +297,17 @@ private fun LigneTache(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     textDecoration = if (task.done) TextDecoration.LineThrough else null,
+                    color = if (task.done) MaterialTheme.colorScheme.onSurfaceVariant
+                    else MaterialTheme.colorScheme.onSurface,
                 )
+                val enRetard = !task.done && task.deadlineAt(zone)
+                    ?.isBefore(java.time.ZonedDateTime.now(zone)) == true
                 Text(
                     echeance(task, zone),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = if (enRetard) FontWeight.Bold else FontWeight.Normal,
+                    color = if (enRetard) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             val sous = listOf(task.project, task.stage, task.partner)

@@ -93,6 +93,15 @@ private fun lightScheme(accent: Color, accentDark: Color) = lightColorScheme(
     onError = Color.White,
 )
 
+/**
+ * Le sombre porte la marque de l'instance, sans la laisser prendre le fond.
+ *
+ * ⚠️ Le fond reste un anthracite NEUTRE, teinté de quelques pour cent vers
+ * l'accent. Prendre la couleur de marque telle quelle pour le fond donnerait
+ * un écran saturé sur lequel rien ne se lit : la marque se reconnaît à
+ * l'accent, pas à la couleur de la page. La teinte suffit à ce que deux
+ * instances ne se ressemblent pas, sans coûter un point de contraste.
+ */
 private fun darkScheme(accent: Color, accentDark: Color) = darkColorScheme(
     primary = accent,
     onPrimary = Color.White,
@@ -100,14 +109,22 @@ private fun darkScheme(accent: Color, accentDark: Color) = darkColorScheme(
     onPrimaryContainer = Color.White,
     secondary = accent,
     onSecondary = Color.White,
-    background = DarkBackground,
+    background = DarkBackground.teinte(accent, 0.04f),
     onBackground = DarkOnSurface,
-    surface = DarkSurface,
+    surface = DarkSurface.teinte(accent, 0.05f),
     onSurface = DarkOnSurface,
-    surfaceVariant = DarkSurfaceVariant,
+    surfaceVariant = DarkSurfaceVariant.teinte(accent, 0.07f),
     onSurfaceVariant = DarkOnSurfaceVariant,
     error = Color(0xFFF2B8B5),
     onError = Color(0xFF601410),
+)
+
+/** [part] de [vers] mélangé dans le receveur. Rien au-delà, volontairement. */
+private fun Color.teinte(vers: Color, part: Float): Color = Color(
+    red = red + (vers.red - red) * part,
+    green = green + (vers.green - green) * part,
+    blue = blue + (vers.blue - blue) * part,
+    alpha = alpha,
 )
 
 @Composable

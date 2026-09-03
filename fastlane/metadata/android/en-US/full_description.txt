@@ -1,22 +1,27 @@
-A mobile client for the Symbifox modules for Odoo. The email and SMS of your
-instance arrive in a single inbox, with sorting, filing and routing done on the
-server rather than on the phone.
+Mobile client for the Symbifox modules for Odoo. Your instance's calendar,
+deadlines, email and texts in a single app, with sorting, filing and routing
+done on the server rather than on the phone.
 
 Features:
 
+* Calendar in day, week or list view, in your Odoo calendar's own colours, with
+  each meeting's agenda and minutes
+* Snooze and dismiss a reminder, confirm attendance, create a meeting
+* Deadlines: tags, stage, priority, completion and creation in place
 * Unified email and SMS inbox, in two tabs
-* Reply, forward and compose, with attachments
+* Reply, forward, compose, with attachments
 * Archive, snooze, and a five-second undo
-* Route a message to an Odoo record, or create a task, ticket, lead, invoice or
-  expense straight from an email
-* Push notifications over UnifiedPush: no Google Play Services, no Firebase
-* Configurable swipe gestures and quick-action buttons
+* Route a message to an Odoo record, create a task, ticket, lead, invoice or
+  expense from an email
+* Assistant and softphone, when the instance offers them
+* UnifiedPush notifications: no Google Play Services, no Firebase
+* Configurable swipe gestures and quick actions
 * Offline cache
-* Brand colours taken from the Odoo instance it connects to
+* Light, dark or system theme, in the connected instance's brand colours
 
-The app asks for your Odoo instance address on first launch. It never sees your
-password: sign-in goes through Odoo's own web login, which returns a single-use
-code.
+The app asks for your instance address on first launch. It never sees your
+password: sign-in goes through Odoo's own web page, which returns a one-time
+token.
 
-This is a client. It requires the bf_email_management and bf_sms_archive Odoo
-modules, which are proprietary (Business Source License 1.1).
+This is a client. It requires the Odoo modules bf_email_management and
+bf_sms_archive, which are proprietary (Business Source License 1.1).

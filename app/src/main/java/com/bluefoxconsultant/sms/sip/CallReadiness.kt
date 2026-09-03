@@ -98,10 +98,10 @@ fun settingsIntentFor(context: Context, gap: CallGap): Intent? {
 /** Où se trouve le réglage, en toutes lettres, quand l'écran ne s'ouvre pas. */
 fun cheminReglage(gap: CallGap): String = when (gap) {
     CallGap.FULL_SCREEN ->
-        "Paramètres › Applications › Symbifox Comms › Notifications › " +
+        "Paramètres › Applications › Symbifox Mobile › Notifications › " +
             "Notifications en plein écran"
     CallGap.HIBERNATION ->
-        "Paramètres › Applications › Symbifox Comms › Application inutilisée › " +
+        "Paramètres › Applications › Symbifox Mobile › Application inutilisée › " +
             "désactiver la mise en pause"
 }
 

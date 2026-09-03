@@ -1,0 +1,10 @@
+* L'application devient Symbifox Mobile : agenda et tâches ont rejoint le
+  courriel et les textos, et « Comms » ne décrivait plus qu'un tiers de ce
+  qu'elle fait
+* Thème sombre par défaut, aux couleurs de l'instance connectée
+* Bouton de thème dans l'en-tête de l'agenda : sombre, clair, système
+* Agenda : trait rouge de l'heure courante, et troisième vue en liste
+* Tâches : en-têtes allégés, priorité en étoile, échéance en retard mise en
+  évidence, projets classés du plus récemment fréquenté
+* La bannière des appels nomme le réglage exact et se laisse taire quand le
+  système la signale à tort

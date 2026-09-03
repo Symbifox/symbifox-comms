@@ -1,18 +1,23 @@
-Client mobile des modules Symbifox pour Odoo. Les courriels et les SMS de votre
-instance arrivent dans une boîte de réception unique, avec le tri, le classement
-et le routage faits côté serveur plutôt que sur le téléphone.
+Client mobile des modules Symbifox pour Odoo. L'agenda, les échéances, les
+courriels et les textos de votre instance dans une seule application, avec le
+tri, le classement et le routage faits côté serveur plutôt que sur le téléphone.
 
 Fonctions :
 
+* Agenda en jour, semaine ou liste, aux couleurs de votre calendrier Odoo, avec
+  l'ordre du jour et le compte rendu de chaque rencontre
+* Report et « vu » d'un rappel, confirmation de présence, création de rencontre
+* Échéances : étiquettes, étape, priorité, complétion et création sur place
 * Boîte unifiée courriel et SMS, en deux onglets
 * Réponse, transfert, rédaction, avec pièces jointes
 * Archivage, report, et annulation pendant cinq secondes
 * Routage d'un message vers une fiche Odoo, création de tâche, billet, piste,
   facture ou dépense à partir d'un courriel
+* Assistant et poste téléphonique, quand l'instance les offre
 * Notifications par UnifiedPush : ni Google Play Services, ni Firebase
 * Gestes de balayage et boutons rapides configurables
 * Cache hors ligne
-* Couleurs reprises de la marque de l'instance Odoo connectée
+* Thème clair, sombre ou système, aux couleurs de la marque de l'instance
 
 L'application demande l'adresse de votre instance au premier lancement. Elle ne
 voit jamais votre mot de passe : la connexion passe par la page web d'Odoo, qui
