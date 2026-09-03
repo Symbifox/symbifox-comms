@@ -56,6 +56,25 @@ class AgendaViewModel : ViewModel() {
         private set
     var loading by mutableStateOf(false)
         private set
+
+    /** Le geste de tirer, distinct de [loading] : il a son propre indicateur. */
+    var refreshing by mutableStateOf(false)
+        private set
+
+    /** Horodatage de la dernière lecture RÉUSSIE, et de la dernière tentative. */
+    var lu by mutableStateOf(0L)
+        private set
+    var verifieA by mutableStateOf(0L)
+        private set
+
+    /**
+     * L'ancre suit-elle « aujourd'hui » ?
+     *
+     * Vrai à l'ouverture et après le pictogramme du jour, faux dès qu'on
+     * feuillette : c'est ce qui décide si minuit déplace la grille.
+     */
+    private var suitAujourdhui = true
+
     var error by mutableStateOf<String?>(null)
         private set
     var selected by mutableStateOf<AgendaEvent?>(null)
@@ -100,7 +119,13 @@ class AgendaViewModel : ViewModel() {
         }
 
     fun switchMode(next: AgendaMode) {
-        if (next == mode) return
+        // Retoucher le mode déjà choisi relit : c'est la commande de relecture
+        // la plus à portée, et elle ne coûte pas un pictogramme de plus dans un
+        // en-tête déjà plein.
+        if (next == mode) {
+            refresh()
+            return
+        }
         mode = next
         load()
     }
@@ -112,11 +137,13 @@ class AgendaViewModel : ViewModel() {
             AgendaMode.LIST -> LIST_DAYS
         }
         anchor = if (forward) anchor.plusDays(delta) else anchor.minusDays(delta)
+        suitAujourdhui = anchor == LocalDate.now(zone)
         load()
     }
 
     fun today() {
         anchor = LocalDate.now(zone)
+        suitAujourdhui = true
         load()
     }
 
@@ -165,7 +192,10 @@ class AgendaViewModel : ViewModel() {
             // On se place sur le jour de la rencontre créée : la créer puis
             // laisser l'écran sur une autre semaine donne l'impression que
             // rien ne s'est passé.
-            cree.dayAt(zone)?.let { anchor = it }
+            cree.dayAt(zone)?.let {
+                anchor = it
+                suitAujourdhui = it == LocalDate.now(zone)
+            }
             load()
         }
     }
@@ -189,10 +219,48 @@ class AgendaViewModel : ViewModel() {
 
     fun clearError() { error = null }
 
-    fun load() {
+    /** Une relecture demandée : la grille montre qu'elle travaille. */
+    fun load() = charger(Regime.VISIBLE)
+
+    /** Tirer pour relire. */
+    fun refresh() = charger(Regime.TIRE)
+
+    /**
+     * Le battement : au retour à l'écran, puis à la minute.
+     *
+     * Il fait deux choses parce qu'elles ont la même cause — du temps a passé
+     * sans que personne regarde : rattraper le jour si minuit est tombé, et
+     * relire si la donnée affichée a vieilli.
+     */
+    fun tick() {
+        val rattrapage = ancreARattraper(anchor, LocalDate.now(zone), suitAujourdhui)
+        if (rattrapage != null) {
+            anchor = rattrapage
+            load()
+            return
+        }
+        if (loading || refreshing) return
+        if (!relectureUtile(System.currentTimeMillis(), lu)) return
+        charger(Regime.SILENCIEUX)
+    }
+
+    private enum class Regime { VISIBLE, TIRE, SILENCIEUX }
+
+    /**
+     * ⚠️ Les témoins sont posés HORS de la coroutine.
+     *
+     * Posés dedans, ils n'existent qu'au prochain tour de la boucle
+     * d'événements, et le battement de la minute peut se glisser entre les deux
+     * pour lancer une seconde lecture de la même fenêtre.
+     */
+    private fun charger(regime: Regime) {
+        when (regime) {
+            Regime.VISIBLE -> loading = true
+            Regime.TIRE -> refreshing = true
+            Regime.SILENCIEUX -> Unit
+        }
+        if (regime != Regime.SILENCIEUX) error = null
         viewModelScope.launch {
-            loading = true
-            error = null
             try {
                 val visible = days
                 val from = visible.first().minusDays(1).atStartOfDay(zone).toInstant()
@@ -202,10 +270,19 @@ class AgendaViewModel : ViewModel() {
                     .mapNotNull { (key, count) ->
                         runCatching { LocalDate.parse(key) }.getOrNull()?.let { it to count }
                     }.toMap()
+                lu = System.currentTimeMillis()
+                error = null
             } catch (e: Exception) {
-                error = e.message ?: "Agenda indisponible."
+                // Une relecture silencieuse qui échoue garde ce qui est affiché
+                // plutôt que de vider l'écran sur une coupure de deux secondes.
+                // Passé [PERIME_MS], l'en-tête le dit : voir `verifieA`.
+                if (regime != Regime.SILENCIEUX) {
+                    error = e.message ?: "Agenda indisponible."
+                }
             } finally {
+                verifieA = System.currentTimeMillis()
                 loading = false
+                refreshing = false
             }
         }
     }

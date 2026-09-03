@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package com.bluefoxconsultant.sms.ui.agenda
 
 import androidx.compose.foundation.background
@@ -32,8 +34,10 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -91,6 +95,9 @@ fun AgendaScreen(onOpenTasks: () -> Unit) {
         scroll.scrollTo((vm.hourHeight * OPEN_AT_HOUR).toInt())
     }
 
+    // Relire au retour sur l'onglet, au retour d'arrière-plan, puis à la minute.
+    RelirePendantQuOnRegarde { vm.tick() }
+
     // ⚠️ Le zoom change la hauteur totale de la grille. Sans ce rattrapage, la
     // position gardée en points ferait sauter l'écran à une autre heure à
     // chaque pincement, et on perdrait ce qu'on regardait.
@@ -125,6 +132,7 @@ fun AgendaScreen(onOpenTasks: () -> Unit) {
     ) {
         AgendaHeader(vm)
         FuseauAvertissement(vm.config.userTz, vm.zone)
+        BanniereFraicheur(vm.lu, vm.verifieA, vm.zone) { vm.refresh() }
         vm.error?.let { message ->
             Surface(color = MaterialTheme.colorScheme.errorContainer) {
                 Row(
@@ -143,8 +151,17 @@ fun AgendaScreen(onOpenTasks: () -> Unit) {
         }
 
         val days = vm.days
+        // ⚠️ Le geste ne prend que sur un enfant qui défile, et la grille
+        // s'ouvre à 07:00 : tirer n'y relit qu'une fois remonté à minuit. Il
+        // sert surtout à la vue liste. Les deux autres commandes de relecture
+        // sont le pictogramme du jour et le mode déjà choisi qu'on retouche.
+        PullToRefreshBox(
+            isRefreshing = vm.refreshing,
+            onRefresh = { vm.refresh() },
+            modifier = Modifier.weight(1f),
+        ) {
         if (vm.mode == AgendaMode.LIST) {
-            Box(Modifier.weight(1f)) {
+            Box(Modifier.fillMaxSize()) {
                 VueListe(days, vm.events, vm.taskCounts, vm.zone,
                     onOpen = { vm.open(it) }, onOpenTasks = onOpenTasks)
                 if (vm.loading) {
@@ -155,6 +172,7 @@ fun AgendaScreen(onOpenTasks: () -> Unit) {
                 }
             }
         } else {
+        Column(Modifier.fillMaxSize()) {
         JoursEnTete(days, vm.taskCounts, vm.zone, onOpenTasks)
         JourneeEntiere(days, vm.events, vm.zone) { vm.open(it) }
 
@@ -189,6 +207,8 @@ fun AgendaScreen(onOpenTasks: () -> Unit) {
                     strokeWidth = 2.dp,
                 )
             }
+        }
+        }
         }
         }
     }

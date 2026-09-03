@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package com.bluefoxconsultant.sms.ui.agenda
 
 import androidx.compose.foundation.clickable
@@ -25,6 +27,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -32,6 +35,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,6 +67,11 @@ private val FR_T = Locale.forLanguageTag("fr-CA")
 fun TachesScreen() {
     val vm: TachesViewModel = viewModel()
     val context = LocalContext.current
+
+    // Même battement que l'agenda : au retour à l'écran, puis à la minute. Une
+    // échéance passée en retard change alors de seau sans qu'on ait à sortir de
+    // l'onglet et à y revenir.
+    RelirePendantQuOnRegarde { vm.tick() }
 
     // 🔴 Un `Scaffold`, comme tous les autres écrans. Sans lui rien ne peint le
     // fond : celui de la fenêtre Android traversait, blanc, et le texte des
@@ -113,6 +122,8 @@ fun TachesScreen() {
             }
         }
 
+        BanniereFraicheur(vm.lu, vm.verifieA, vm.zone) { vm.refresh() }
+
         vm.error?.let { message ->
             Surface(color = MaterialTheme.colorScheme.errorContainer) {
                 Row(
@@ -130,6 +141,11 @@ fun TachesScreen() {
             }
         }
 
+        PullToRefreshBox(
+            isRefreshing = vm.refreshing,
+            onRefresh = { vm.refresh() },
+            modifier = Modifier.fillMaxSize(),
+        ) {
         LazyColumn(Modifier.fillMaxSize()) {
             if (vm.overdue.isNotEmpty()) {
                 item { Entete("En retard", vm.overdue.size, alerte = true) }
@@ -176,6 +192,7 @@ fun TachesScreen() {
                 }
             }
             item { Spacer(Modifier.height(72.dp)) }
+        }
         }
     }
 

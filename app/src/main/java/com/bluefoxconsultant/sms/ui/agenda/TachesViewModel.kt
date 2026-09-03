@@ -39,6 +39,17 @@ class TachesViewModel : ViewModel() {
         private set
     var loading by mutableStateOf(false)
         private set
+
+    /** Le geste de tirer, distinct de [loading] : il a son propre indicateur. */
+    var refreshing by mutableStateOf(false)
+        private set
+
+    /** Dernière lecture RÉUSSIE, et dernière tentative. Voir `Rafraichissement`. */
+    var lu by mutableStateOf(0L)
+        private set
+    var verifieA by mutableStateOf(0L)
+        private set
+
     var error by mutableStateOf<String?>(null)
         private set
 
@@ -126,7 +137,11 @@ class TachesViewModel : ViewModel() {
     fun clearError() { error = null }
 
     fun setHorizon(days: Long) {
-        if (days == horizonDays) return
+        // Retoucher l'horizon déjà choisi relit, comme les modes de l'agenda.
+        if (days == horizonDays) {
+            refresh()
+            return
+        }
         horizonDays = days
         load()
     }
@@ -136,10 +151,36 @@ class TachesViewModel : ViewModel() {
         if (showUndated && undated.isEmpty()) load()
     }
 
-    fun load() {
+    fun load() = charger(Regime.VISIBLE)
+
+    /** Tirer pour relire. */
+    fun refresh() = charger(Regime.TIRE)
+
+    /**
+     * Le battement : au retour à l'écran, puis à la minute.
+     *
+     * La fenêtre est calculée à partir d'aujourd'hui à CHAQUE lecture, donc
+     * relire suffit à faire passer minuit ; il n'y a pas d'ancre à rattraper
+     * comme dans l'agenda. Une échéance qui vient de tomber en retard change
+     * alors de seau toute seule.
+     */
+    fun tick() {
+        if (loading || refreshing) return
+        if (!relectureUtile(System.currentTimeMillis(), lu)) return
+        charger(Regime.SILENCIEUX)
+    }
+
+    private enum class Regime { VISIBLE, TIRE, SILENCIEUX }
+
+    /** ⚠️ Témoins posés hors de la coroutine : voir `AgendaViewModel.charger`. */
+    private fun charger(regime: Regime) {
+        when (regime) {
+            Regime.VISIBLE -> loading = true
+            Regime.TIRE -> refreshing = true
+            Regime.SILENCIEUX -> Unit
+        }
+        if (regime != Regime.SILENCIEUX) error = null
         viewModelScope.launch {
-            loading = true
-            error = null
             try {
                 val today = LocalDate.now(zone)
                 val from = today.minusDays(1).atStartOfDay(zone).toInstant()
@@ -149,10 +190,16 @@ class TachesViewModel : ViewModel() {
                 window = res.window
                 undated = res.undated
                 undatedCount = res.undatedCount
+                lu = System.currentTimeMillis()
+                error = null
             } catch (e: Exception) {
-                error = e.message ?: "Échéances indisponibles."
+                if (regime != Regime.SILENCIEUX) {
+                    error = e.message ?: "Échéances indisponibles."
+                }
             } finally {
+                verifieA = System.currentTimeMillis()
                 loading = false
+                refreshing = false
             }
         }
     }

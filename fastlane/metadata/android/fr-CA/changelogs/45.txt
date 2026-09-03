@@ -1,0 +1,7 @@
+* L'agenda et les échéances se relisent seuls : au retour à l'écran, puis à
+  chaque minute tant qu'ils sont devant. Rien ne les relisait auparavant :
+  une grille ouverte le matin montrait encore le matin le soir
+* Tirer vers le bas pour relire, comme dans les messages et le courriel
+* Minuit fait avancer la grille : laissée ouverte, elle ne reste plus sur hier
+* Quand la relecture ne passe plus, l'heure de la dernière lecture est écrite
+  plutôt que laissée à deviner
