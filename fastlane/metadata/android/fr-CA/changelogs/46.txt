@@ -1,0 +1,11 @@
+* L'appariement d'une installation neuve fonctionne enfin : l'app disait
+  « Impossible d'ouvrir le navigateur » et n'ouvrait rien. L'intention partait
+  d'un contexte d'application sans le drapeau que réclame Android, et le
+  navigateur n'y était pour rien
+* Les deux premiers écrans ne s'annoncent plus « Odoo SMS », marque retirée
+  depuis deux renommages : ils prennent le nom de l'application
+* Un courriel bâti pour un écran de bureau se lit correctement sur le téléphone :
+  l'image d'en-tête d'une infolettre arrivait en vignette de 135 × 90, le logo
+  de l'expéditeur doublait de taille et le texte se faisait couper à droite.
+  L'app ramène maintenant les tableaux à largeur fixe à la largeur de l'écran
+  au lieu de redimensionner les images

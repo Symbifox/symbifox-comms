@@ -1,0 +1,9 @@
+* Pairing a fresh install works again: the app said "cannot open the browser"
+  and opened nothing. The intent was sent from an application context without
+  the flag Android requires; the browser was never at fault
+* The first two screens no longer announce "Odoo SMS", a name dropped two
+  renames ago: they now use the application name
+* Desktop-built email now reads properly on a phone: a newsletter's header image
+  arrived as a 135 x 90 thumbnail, the sender's logo doubled in size and the
+  text was cut off on the right. The app now brings fixed-width tables down to
+  the screen instead of resizing the images

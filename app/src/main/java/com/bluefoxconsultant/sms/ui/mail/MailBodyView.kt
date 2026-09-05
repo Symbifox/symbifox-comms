@@ -125,24 +125,38 @@ private fun wrap(body: String, textColor: Color, background: Color): String {
             font-size: 15px; line-height: 1.45;
             word-wrap: break-word; overflow-wrap: break-word;
           }
-          /* Un courriel d'entreprise arrive avec des logos dimensionnés pour
-             un écran de bureau : attribut width=600, style height=200px, dans
-             un tableau à largeur fixe. max-width seul ne suffit pas — il borne
-             la LARGEUR relative au conteneur, et un conteneur trop large laisse
-             passer un logo démesuré. On borne donc aussi la hauteur, et on
-             ramène tout conteneur à la largeur de l'écran. */
-          img {
+          /* Un courriel de bureau arrive en tableaux à largeur fixe, 600 px
+             et plus. `max-width: 100%` seul n'y peut rien : en mise en page
+             automatique, la colonne qui porte le tableau s'élargit à son
+             contenu, donc le « 100 % » se calcule sur la largeur même qu'on
+             voulait borner, et le message déborde de l'écran. On neutralise
+             donc la largeur fixe, et on laisse remplir la ligne à ceux qui
+             demandent vraiment 100 %. */
+          table {
             max-width: 100% !important;
             width: auto !important;
-            height: auto !important;
-            max-height: 45vh !important;
-            object-fit: contain;
+            table-layout: auto !important;
           }
-          /* Dans un tableau d'en-tête, le logo doit rester à l'échelle de la
-             ligne qui le porte, pas la faire éclater. */
-          td img, th img { max-height: 90px !important; }
-          table, td, th, div, p, figure { max-width: 100% !important; }
-          table { table-layout: auto !important; }
+          table[width="100%"],
+          table[style*="width:100%"],
+          table[style*="width: 100%"] { width: 100% !important; }
+          td, th, div, p, figure { max-width: 100% !important; }
+          /* Dernier recours contre un mot, une adresse ou une file d'espaces
+             insécables qui refuse de se replier et pousse tout le message
+             hors de l'écran. */
+          td, th, div, p, li, blockquote { overflow-wrap: anywhere; }
+          /* Images : on BORNE, on ne redimensionne pas. La version d'avant
+             réécrivait width et height, et plafonnait à 90 px toute image
+             posée dans un tableau, c'est-à-dire toutes celles d'un courriel.
+             Elle rendait en vignette de 135 × 90 l'image d'en-tête d'une
+             infolettre, et gonflait à 90 px le logo que l'expéditeur avait
+             posé à 40. Une fois les conteneurs ramenés à l'écran, borner la
+             largeur suffit. */
+          img { max-width: 100% !important; }
+          /* Une image dimensionnée en largeur garde ses proportions quand
+             max-width la rétrécit. Sans !important : un style en ligne, lui,
+             a été écrit exprès et doit gagner. */
+          img[width] { height: auto; }
           pre { white-space: pre-wrap; word-wrap: break-word; }
           blockquote {
             border-left: 3px solid rgba(128,128,128,0.4);
