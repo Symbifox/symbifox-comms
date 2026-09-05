@@ -19,6 +19,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.bluefoxconsultant.sms.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -39,7 +41,7 @@ fun InstanceScreen(vm: InstanceViewModel = viewModel()) {
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = "Odoo SMS",
+            text = stringResource(R.string.app_name),
             color = MaterialTheme.colorScheme.primary,
             fontWeight = FontWeight.Bold,
             fontSize = 30.sp,

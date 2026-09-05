@@ -1,6 +1,7 @@
 package com.bluefoxconsultant.sms.ui.login
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.util.Base64
 import androidx.browser.customtabs.CustomTabsIntent
@@ -98,10 +99,17 @@ class AuthViewModel : ViewModel() {
             "&code_challenge_method=S256"
 
         try {
-            CustomTabsIntent.Builder()
+            val onglet = CustomTabsIntent.Builder()
                 .setShowTitle(true)
                 .build()
-                .launchUrl(context, Uri.parse(url))
+            // 🔴 `startLogin` passe le contexte d'APPLICATION, pour ne pas retenir
+            // l'activité pendant la coroutine de sonde. Or `launchUrl` fait un
+            // `startActivity` : depuis un contexte d'application, sans ce drapeau,
+            // Android lève et le `catch` ci-dessous affichait « Impossible
+            // d'ouvrir le navigateur » sur toute première installation. Le
+            // navigateur n'y était pour rien.
+            onglet.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            onglet.launchUrl(context, Uri.parse(url))
         } catch (e: Exception) {
             error = "Impossible d'ouvrir le navigateur."
         }
