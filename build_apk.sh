@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
-# Build the signed release APK (Kotlin/Compose) in a gradle:8.10.2-jdk17
+# Build the signed release packages (Kotlin/Compose) in a gradle:8.14.5-jdk17
 # container, so the toolchain is the same everywhere and nothing needs to be
 # installed on the host but Docker.
+#
+# Two artefacts, on purpose: the .aab is what Google Play takes (it refuses an
+# APK for a first publication), the .apk is what installs by hand and what
+# carries a verifiable signature: an .aab is an upload package, resigned by
+# Play itself.
 #
 # Signing credentials come from signing.env, which is not in this repository:
 #   BF_KEYSTORE, BF_KS_PASS, BF_KEY_ALIAS, BF_KEY_PASS
@@ -18,7 +23,7 @@ docker run --rm \
   -e JAVA_HOME=/opt/java/openjdk \
   -e GRADLE_USER_HOME=/work/.gradle \
   -e HOST_UID="$HOST_UID" -e HOST_GID="$HOST_GID" \
-  gradle:8.10.2-jdk17 bash -c '
+  gradle:8.14.5-jdk17 bash -c '
     set -e
     export PATH=$PATH:/sdk/cmdline-tools/latest/bin:/sdk/platform-tools
     if [ ! -x /sdk/cmdline-tools/latest/bin/sdkmanager ]; then
@@ -28,10 +33,12 @@ docker run --rm \
       mv /sdk/cmdline-tools/cmdline-tools /sdk/cmdline-tools/latest
     fi
     yes | sdkmanager --licenses >/dev/null 2>&1 || true
-    sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" >/dev/null
-    gradle :app:assembleRelease --no-daemon --console=plain
+    sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0" >/dev/null
+    gradle :app:assembleRelease :app:bundleRelease --no-daemon --console=plain
     chown -R ${HOST_UID}:${HOST_GID} /work/.gradle /work/app/build 2>/dev/null || true
     echo ">> BUILD OK"
   '
 APK="$P/app/build/outputs/apk/release/app-release.apk"
 [ -f "$APK" ] && echo "APK: $APK ($(du -h "$APK" | cut -f1))" || { echo "APK MISSING"; exit 1; }
+AAB="$P/app/build/outputs/bundle/release/app-release.aab"
+[ -f "$AAB" ] && echo "AAB: $AAB ($(du -h "$AAB" | cut -f1))" || { echo "AAB MISSING"; exit 1; }

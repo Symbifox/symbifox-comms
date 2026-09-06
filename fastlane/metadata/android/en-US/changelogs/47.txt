@@ -1,0 +1,6 @@
+* The app now targets Android 16. System bars no longer reserve their own
+  space: the top banner and the tab bar account for the cutout and the
+  navigation bar instead of sliding underneath them
+* Nothing else changes in use. This is a store compliance release: as of
+  31 August 2026 the stores reject anything targeting an
+  earlier version

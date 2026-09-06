@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.bluefoxconsultant.sms"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         // ⚠️ NE PAS renommer. Le libellé visible est dans strings.xml ; cet
@@ -17,9 +17,9 @@ android {
         // bf_sms_archive.mobile_redirect_schemes et son équivalent courriel.
         applicationId = "com.bluefoxconsultant.sms"
         minSdk = 26
-        targetSdk = 34
-        versionCode = 46
-        versionName = "2.38.0"
+        targetSdk = 36
+        versionCode = 47
+        versionName = "2.39.0"
     }
 
     signingConfigs {

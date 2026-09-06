@@ -9,16 +9,23 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsBottomHeight
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -51,6 +58,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -60,40 +69,38 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.bluefoxconsultant.sms.assist.EXTRA_ASSIST
 import com.bluefoxconsultant.sms.data.Graph
+import com.bluefoxconsultant.sms.data.Service
 import com.bluefoxconsultant.sms.data.ShareIntake
 import com.bluefoxconsultant.sms.data.SharedContent
+import com.bluefoxconsultant.sms.push.Notifier
 import com.bluefoxconsultant.sms.sip.CallGap
-import com.bluefoxconsultant.sms.sip.rememberCallGaps
+import com.bluefoxconsultant.sms.sip.SipEngine
 import com.bluefoxconsultant.sms.sip.cheminReglage
+import com.bluefoxconsultant.sms.sip.rememberCallGaps
 import com.bluefoxconsultant.sms.sip.settingsIntentFor
 import com.bluefoxconsultant.sms.sip.tairePourToujours
-import com.bluefoxconsultant.sms.sip.SipEngine
-import com.bluefoxconsultant.sms.data.Service
-import com.bluefoxconsultant.sms.push.Notifier
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.bluefoxconsultant.sms.ui.compose.ComposeScreen
-import com.bluefoxconsultant.sms.ui.conversation.ConversationScreen
 import com.bluefoxconsultant.sms.ui.agenda.AgendaScreen
 import com.bluefoxconsultant.sms.ui.agenda.TachesScreen
+import com.bluefoxconsultant.sms.ui.compose.ComposeScreen
+import com.bluefoxconsultant.sms.ui.conversation.ConversationScreen
 import com.bluefoxconsultant.sms.ui.genfox.GenfoxScreen
-import com.bluefoxconsultant.sms.ui.phone.PhoneScreen
 import com.bluefoxconsultant.sms.ui.instance.InstanceScreen
 import com.bluefoxconsultant.sms.ui.login.LoginScreen
 import com.bluefoxconsultant.sms.ui.mail.MailComposeScreen
 import com.bluefoxconsultant.sms.ui.mail.MailListScreen
 import com.bluefoxconsultant.sms.ui.mail.MailListViewModel
 import com.bluefoxconsultant.sms.ui.mail.MailThreadScreen
+import com.bluefoxconsultant.sms.ui.phone.PhoneScreen
 import com.bluefoxconsultant.sms.ui.settings.SettingsScreen
 import com.bluefoxconsultant.sms.ui.share.ShareScreen
-import com.bluefoxconsultant.sms.ui.theme.BrandAccent
 import com.bluefoxconsultant.sms.ui.theme.BfSmsTheme
+import com.bluefoxconsultant.sms.ui.theme.BrandAccent
 import com.bluefoxconsultant.sms.ui.threads.ArchivedScreen
 import com.bluefoxconsultant.sms.ui.threads.ThreadsScreen
-import androidx.lifecycle.viewmodel.compose.viewModel
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import java.net.URLDecoder
 import java.net.URLEncoder
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
 
@@ -422,251 +429,288 @@ private fun HomeShell(
 
     val startTab = if (Service.SMS in tabs) Tabs.SMS else Tabs.MAIL
 
-    Column(Modifier.fillMaxSize()) {
-        // Au-dessus de tout, sur tous les onglets : une panne ne se range pas
-        // dans une section. Sur un écran de détail aussi — c'est justement en
-        // lisant autre chose qu'on veut l'apprendre.
-        if (hosting.enabled && hosting.hasAny) HostingBanner(hosting)
-        // Le poste peut très bien recevoir le push et ne pas sonner pour
-        // autant. Montrée seulement quand le compte A un poste : prévenir
-        // quelqu'un qui ne reçoit pas d'appels de toute façon serait du bruit.
-        // Un seul manque à la fois, le plus grave d'abord.
-        if (phone.enabled && phone.extension.isNotBlank()) {
-            callGaps.firstOrNull()?.let { CallGapBanner(it) }
+    // ⚠️ Android 15 impose le bord à bord aux applications qui visent l'API 35
+    // ou plus : les barres système cessent de réserver leur place, et
+    // `android:statusBarColor` du thème n'est plus lu du tout. Sans ce qui
+    // suit, la bannière du haut passerait SOUS l'heure et la barre d'onglets
+    // SOUS la barre de navigation.
+    //
+    // Les deux bandes rendent aux barres une couleur, et le
+    // `windowInsetsPadding` de la colonne CONSOMME les encoches : les
+    // `Scaffold` des écrans, en dessous, en voient zéro et n'ont donc rien à
+    // repadder. ⚠️ Sur Android 14 et moins, où la fenêtre n'est pas bord à
+    // bord, ces encoches valent déjà zéro : rien ne bouge à l'écran.
+    val couleurBandeHaut =
+        if (hosting.enabled && hosting.hasAny) {
+            if (hosting.isDown) AlertRed else AlertAmber
+        } else {
+            BrandAccent
         }
-        NavHost(
-            navController = nav,
-            startDestination = startTab,
-            modifier = Modifier.weight(1f),
+    Box(Modifier.fillMaxSize()) {
+        Spacer(
+            Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .windowInsetsTopHeight(WindowInsets.safeDrawing)
+                .background(couleurBandeHaut),
+        )
+        Spacer(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .windowInsetsBottomHeight(WindowInsets.safeDrawing)
+                .background(MaterialTheme.colorScheme.surfaceContainer),
+        )
+        Column(
+            Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.safeDrawing),
         ) {
-            composable(Tabs.SMS) {
-                ThreadsScreen(
-                    onOpenThread = { id -> nav.navigate("${Tabs.CONVERSATION}/$id") },
-                    onCompose = { nav.navigate(Tabs.SMS_COMPOSE) },
-                    onArchived = { nav.navigate(Tabs.ARCHIVED) },
-                    onSettings = { rootNav.navigate(Routes.SETTINGS) },
-                )
+            // Au-dessus de tout, sur tous les onglets : une panne ne se range pas
+            // dans une section. Sur un écran de détail aussi — c'est justement en
+            // lisant autre chose qu'on veut l'apprendre.
+            if (hosting.enabled && hosting.hasAny) HostingBanner(hosting)
+            // Le poste peut très bien recevoir le push et ne pas sonner pour
+            // autant. Montrée seulement quand le compte A un poste : prévenir
+            // quelqu'un qui ne reçoit pas d'appels de toute façon serait du bruit.
+            // Un seul manque à la fois, le plus grave d'abord.
+            if (phone.enabled && phone.extension.isNotBlank()) {
+                callGaps.firstOrNull()?.let { CallGapBanner(it) }
             }
-            composable(Tabs.SMS_COMPOSE) {
-                // Pris à l'entrée sur l'écran, une fois : `remember` est lié à
-                // cette entrée de navigation, donc revenir plus tard sur un
-                // nouveau message n'y trouve plus rien.
-                val shared = remember { ShareIntake.take() }
-                ComposeScreen(
-                    shared = shared,
-                    onBack = { nav.popBackStack() },
-                    onSent = { id ->
-                        nav.navigate("${Tabs.CONVERSATION}/$id") {
-                            popUpTo(Tabs.SMS_COMPOSE) { inclusive = true }
-                        }
-                    },
-                )
-            }
-            composable(Tabs.SHARE) {
-                val shared = ShareIntake.peek()
-                if (shared == null) {
-                    // Le partage a déjà été pris (retour arrière, rotation) :
-                    // rien à choisir, on ne laisse pas un écran vide.
-                    LaunchedEffect(Unit) { nav.popBackStack() }
-                    return@composable
-                }
-                ShareScreen(
-                    shared = shared,
-                    canSms = tokens.containsKey(Service.SMS),
-                    canMail = tokens.containsKey(Service.MAIL),
-                    onSms = {
-                        nav.navigate(Tabs.SMS_COMPOSE) {
-                            popUpTo(Tabs.SHARE) { inclusive = true }
-                        }
-                    },
-                    onMail = {
-                        openMailCompose(nav, clearing = Tabs.SHARE)
-                    },
-                    // ⚠️ Renoncer VIDE la réserve. Sans ça, le partage
-                    // abandonné referait surface dans le prochain message neuf
-                    // composé à la main, ce qui se lit comme un bug.
-                    onBack = {
-                        ShareIntake.clear()
-                        nav.popBackStack()
-                    },
-                )
-            }
-            composable(Tabs.GENFOX) {
-                GenfoxScreen(
-                    assist = pendingAssist.value,
-                    onAssistConsumed = { pendingAssist.value = false },
-                )
-            }
-            composable(Tabs.AGENDA) {
-                AgendaScreen(
-                    onOpenTasks = {
-                        nav.navigate(Tabs.TASKS) {
-                            popUpTo(nav.graph.startDestinationId) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                )
-            }
-            composable(Tabs.TASKS) { TachesScreen() }
-            composable(Tabs.PHONE) {
-                PhoneScreen(
-                    prefill = pendingDial.value?.takeIf { it.isNotBlank() },
-                    onPrefillConsumed = { pendingDial.value = null },
-                )
-            }
-            composable(Tabs.ARCHIVED) {
-                ArchivedScreen(
-                    onBack = { nav.popBackStack() },
-                    onOpenThread = { id -> nav.navigate("${Tabs.CONVERSATION}/$id") },
-                )
-            }
-            composable(
-                route = "${Tabs.CONVERSATION}/{threadId}",
-                arguments = listOf(navArgument("threadId") { type = NavType.IntType }),
-            ) { entry ->
-                ConversationScreen(
-                    threadId = entry.arguments?.getInt("threadId") ?: 0,
-                    onBack = { nav.popBackStack() },
-                )
-            }
-
-            composable(Tabs.MAIL) {
-                if (!tokens.containsKey(Service.MAIL)) {
-                    ConnectServicePane(
-                        service = Service.MAIL,
-                        pendingAuthUri = pendingAuthUri,
+            NavHost(
+                navController = nav,
+                startDestination = startTab,
+                modifier = Modifier.weight(1f),
+            ) {
+                composable(Tabs.SMS) {
+                    ThreadsScreen(
+                        onOpenThread = { id -> nav.navigate("${Tabs.CONVERSATION}/$id") },
+                        onCompose = { nav.navigate(Tabs.SMS_COMPOSE) },
+                        onArchived = { nav.navigate(Tabs.ARCHIVED) },
+                        onSettings = { rootNav.navigate(Routes.SETTINGS) },
                     )
-                    return@composable
                 }
-                // Hoisted to the tab entry so config (snooze presets, spawn
-                // kinds) survives navigating into a thread and back.
-                val vm: MailListViewModel = viewModel(viewModelStoreOwner = it)
-                MailListScreen(
-                    onOpenThread = { key ->
-                        nav.navigate("${Tabs.MAIL_THREAD}/${URLEncoder.encode(key, "UTF-8")}")
-                    },
-                    onCompose = { nav.navigate("${Tabs.MAIL_COMPOSE}/new/0") },
-                    // Reprendre un brouillon rouvre le composeur DANS SON MODE :
-                    // une réponse gardée doit repartir comme une réponse, pas
-                    // comme un message neuf qui perdrait le fil d'origine.
-                    onOpenDraft = { draft ->
-                        nav.navigate(
-                            "${Tabs.MAIL_COMPOSE}/${draft.mode}/${draft.emailId}" +
-                                "?draft=${URLEncoder.encode(draft.id, "UTF-8")}",
-                        )
-                    },
-                    onSettings = { rootNav.navigate(Routes.SETTINGS) },
-                    vm = vm,
-                )
-            }
-            composable(
-                route = "${Tabs.MAIL_THREAD}/{threadKey}",
-                arguments = listOf(navArgument("threadKey") { type = NavType.StringType }),
-            ) { entry ->
-                val encoded = entry.arguments?.getString("threadKey").orEmpty()
-                val key = runCatching { URLDecoder.decode(encoded, "UTF-8") }.getOrDefault(encoded)
-                val listEntry = remember(entry) { nav.getBackStackEntry(Tabs.MAIL) }
-                val listVm: MailListViewModel = viewModel(viewModelStoreOwner = listEntry)
-                MailThreadScreen(
-                    threadKey = key,
-                    config = listVm.config,
-                    onBack = { nav.popBackStack() },
-                    onReply = { emailId, mode ->
-                        nav.navigate("${Tabs.MAIL_COMPOSE}/$mode/$emailId")
-                    },
-                )
-            }
-            composable(
-                route = "${Tabs.MAIL_COMPOSE}/{mode}/{emailId}?draft={draft}",
-                arguments = listOf(
-                    navArgument("mode") { type = NavType.StringType },
-                    navArgument("emailId") { type = NavType.IntType },
-                    navArgument("draft") {
-                        type = NavType.StringType
-                        defaultValue = ""
-                    },
-                ),
-            ) { entry ->
-                // Le mot du brouillon gardé revient à la liste, seul écran
-                // encore là pour le dire — d'où le détour par son ViewModel.
-                val listEntry = remember(entry) { nav.getBackStackEntry(Tabs.MAIL) }
-                val listVm: MailListViewModel = viewModel(viewModelStoreOwner = listEntry)
-                val encodedDraft = entry.arguments?.getString("draft").orEmpty()
-                val mode = entry.arguments?.getString("mode") ?: "new"
-                // Une réponse ou un brouillon repris n'a rien à voir avec un
-                // partage : seul un message NEUF peut en adopter un.
-                val shared = remember(entry) {
-                    if (mode == "new" && encodedDraft.isBlank()) ShareIntake.take() else null
+                composable(Tabs.SMS_COMPOSE) {
+                    // Pris à l'entrée sur l'écran, une fois : `remember` est lié à
+                    // cette entrée de navigation, donc revenir plus tard sur un
+                    // nouveau message n'y trouve plus rien.
+                    val shared = remember { ShareIntake.take() }
+                    ComposeScreen(
+                        shared = shared,
+                        onBack = { nav.popBackStack() },
+                        onSent = { id ->
+                            nav.navigate("${Tabs.CONVERSATION}/$id") {
+                                popUpTo(Tabs.SMS_COMPOSE) { inclusive = true }
+                            }
+                        },
+                    )
                 }
-                MailComposeScreen(
-                    mode = mode,
-                    emailId = entry.arguments?.getInt("emailId") ?: 0,
-                    shared = shared,
-                    draftId = runCatching { URLDecoder.decode(encodedDraft, "UTF-8") }
-                        .getOrDefault(encodedDraft),
-                    onBack = { saved ->
-                        nav.popBackStack()
-                        if (saved) listVm.announceDraftSaved()
-                    },
-                    onSent = { nav.popBackStack() },
-                )
-            }
-        }
-
-        // Shown on every root screen whenever the server offers both halves —
-        // including before the second is connected, so the way across is
-        // always visible rather than something you have to already know about.
-        val bottomTabs = buildList {
-            tabs.forEach { service ->
-                add(
-                    if (service == Service.MAIL) {
-                        Triple(Tabs.MAIL, service.label, Icons.Filled.MailOutline)
-                    } else {
-                        Triple(Tabs.SMS, service.label, Icons.AutoMirrored.Filled.Chat)
-                    },
-                )
-            }
-            if (phone.enabled && tokens.isNotEmpty()) {
-                add(Triple(Tabs.PHONE, "Téléphone", Icons.Filled.Dialpad))
-            }
-            if (genfox.enabled && tokens.isNotEmpty()) {
-                add(Triple(Tabs.GENFOX, "Gen", Icons.Filled.AutoAwesome))
-            }
-            if (agenda.enabled && tokens.isNotEmpty()) {
-                add(Triple(Tabs.AGENDA, "Agenda", Icons.Filled.CalendarMonth))
-                add(Triple(Tabs.TASKS, "Tâches", Icons.Filled.Checklist))
-            }
-        }
-        if (bottomTabs.size > 1 && onRoot) {
-            // ⚠️ Au-delà de quatre onglets, Material3 serre les libellés et
-            // rétrécit les pictogrammes jusqu'à les rendre illisibles. Passé ce
-            // seuil on retire les libellés et on agrandit le picto : la barre
-            // porte alors six cibles franches plutôt que six timbres-poste.
-            // Le libellé reste en description, donc l'accessibilité n'y perd
-            // rien.
-            val serree = bottomTabs.size > 4
-            NavigationBar {
-                bottomTabs.forEach { (tabRoute, label, icon) ->
-                    NavigationBarItem(
-                        selected = route == tabRoute,
-                        onClick = {
-                            nav.navigate(tabRoute) {
+                composable(Tabs.SHARE) {
+                    val shared = ShareIntake.peek()
+                    if (shared == null) {
+                        // Le partage a déjà été pris (retour arrière, rotation) :
+                        // rien à choisir, on ne laisse pas un écran vide.
+                        LaunchedEffect(Unit) { nav.popBackStack() }
+                        return@composable
+                    }
+                    ShareScreen(
+                        shared = shared,
+                        canSms = tokens.containsKey(Service.SMS),
+                        canMail = tokens.containsKey(Service.MAIL),
+                        onSms = {
+                            nav.navigate(Tabs.SMS_COMPOSE) {
+                                popUpTo(Tabs.SHARE) { inclusive = true }
+                            }
+                        },
+                        onMail = {
+                            openMailCompose(nav, clearing = Tabs.SHARE)
+                        },
+                        // ⚠️ Renoncer VIDE la réserve. Sans ça, le partage
+                        // abandonné referait surface dans le prochain message neuf
+                        // composé à la main, ce qui se lit comme un bug.
+                        onBack = {
+                            ShareIntake.clear()
+                            nav.popBackStack()
+                        },
+                    )
+                }
+                composable(Tabs.GENFOX) {
+                    GenfoxScreen(
+                        assist = pendingAssist.value,
+                        onAssistConsumed = { pendingAssist.value = false },
+                    )
+                }
+                composable(Tabs.AGENDA) {
+                    AgendaScreen(
+                        onOpenTasks = {
+                            nav.navigate(Tabs.TASKS) {
                                 popUpTo(nav.graph.startDestinationId) { saveState = true }
                                 launchSingleTop = true
                                 restoreState = true
                             }
                         },
-                        icon = {
-                            Icon(
-                                icon,
-                                contentDescription = label,
-                                modifier = if (serree) Modifier.size(28.dp) else Modifier,
+                    )
+                }
+                composable(Tabs.TASKS) { TachesScreen() }
+                composable(Tabs.PHONE) {
+                    PhoneScreen(
+                        prefill = pendingDial.value?.takeIf { it.isNotBlank() },
+                        onPrefillConsumed = { pendingDial.value = null },
+                    )
+                }
+                composable(Tabs.ARCHIVED) {
+                    ArchivedScreen(
+                        onBack = { nav.popBackStack() },
+                        onOpenThread = { id -> nav.navigate("${Tabs.CONVERSATION}/$id") },
+                    )
+                }
+                composable(
+                    route = "${Tabs.CONVERSATION}/{threadId}",
+                    arguments = listOf(navArgument("threadId") { type = NavType.IntType }),
+                ) { entry ->
+                    ConversationScreen(
+                        threadId = entry.arguments?.getInt("threadId") ?: 0,
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+
+                composable(Tabs.MAIL) {
+                    if (!tokens.containsKey(Service.MAIL)) {
+                        ConnectServicePane(
+                            service = Service.MAIL,
+                            pendingAuthUri = pendingAuthUri,
+                        )
+                        return@composable
+                    }
+                    // Hoisted to the tab entry so config (snooze presets, spawn
+                    // kinds) survives navigating into a thread and back.
+                    val vm: MailListViewModel = viewModel(viewModelStoreOwner = it)
+                    MailListScreen(
+                        onOpenThread = { key ->
+                            nav.navigate("${Tabs.MAIL_THREAD}/${URLEncoder.encode(key, "UTF-8")}")
+                        },
+                        onCompose = { nav.navigate("${Tabs.MAIL_COMPOSE}/new/0") },
+                        // Reprendre un brouillon rouvre le composeur DANS SON MODE :
+                        // une réponse gardée doit repartir comme une réponse, pas
+                        // comme un message neuf qui perdrait le fil d'origine.
+                        onOpenDraft = { draft ->
+                            nav.navigate(
+                                "${Tabs.MAIL_COMPOSE}/${draft.mode}/${draft.emailId}" +
+                                    "?draft=${URLEncoder.encode(draft.id, "UTF-8")}",
                             )
                         },
-                        label = if (serree) null else ({ Text(label) }),
-                        alwaysShowLabel = !serree,
+                        onSettings = { rootNav.navigate(Routes.SETTINGS) },
+                        vm = vm,
                     )
+                }
+                composable(
+                    route = "${Tabs.MAIL_THREAD}/{threadKey}",
+                    arguments = listOf(navArgument("threadKey") { type = NavType.StringType }),
+                ) { entry ->
+                    val encoded = entry.arguments?.getString("threadKey").orEmpty()
+                    val key = runCatching { URLDecoder.decode(encoded, "UTF-8") }.getOrDefault(encoded)
+                    val listEntry = remember(entry) { nav.getBackStackEntry(Tabs.MAIL) }
+                    val listVm: MailListViewModel = viewModel(viewModelStoreOwner = listEntry)
+                    MailThreadScreen(
+                        threadKey = key,
+                        config = listVm.config,
+                        onBack = { nav.popBackStack() },
+                        onReply = { emailId, mode ->
+                            nav.navigate("${Tabs.MAIL_COMPOSE}/$mode/$emailId")
+                        },
+                    )
+                }
+                composable(
+                    route = "${Tabs.MAIL_COMPOSE}/{mode}/{emailId}?draft={draft}",
+                    arguments = listOf(
+                        navArgument("mode") { type = NavType.StringType },
+                        navArgument("emailId") { type = NavType.IntType },
+                        navArgument("draft") {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        },
+                    ),
+                ) { entry ->
+                    // Le mot du brouillon gardé revient à la liste, seul écran
+                    // encore là pour le dire — d'où le détour par son ViewModel.
+                    val listEntry = remember(entry) { nav.getBackStackEntry(Tabs.MAIL) }
+                    val listVm: MailListViewModel = viewModel(viewModelStoreOwner = listEntry)
+                    val encodedDraft = entry.arguments?.getString("draft").orEmpty()
+                    val mode = entry.arguments?.getString("mode") ?: "new"
+                    // Une réponse ou un brouillon repris n'a rien à voir avec un
+                    // partage : seul un message NEUF peut en adopter un.
+                    val shared = remember(entry) {
+                        if (mode == "new" && encodedDraft.isBlank()) ShareIntake.take() else null
+                    }
+                    MailComposeScreen(
+                        mode = mode,
+                        emailId = entry.arguments?.getInt("emailId") ?: 0,
+                        shared = shared,
+                        draftId = runCatching { URLDecoder.decode(encodedDraft, "UTF-8") }
+                            .getOrDefault(encodedDraft),
+                        onBack = { saved ->
+                            nav.popBackStack()
+                            if (saved) listVm.announceDraftSaved()
+                        },
+                        onSent = { nav.popBackStack() },
+                    )
+                }
+            }
+
+            // Shown on every root screen whenever the server offers both halves —
+            // including before the second is connected, so the way across is
+            // always visible rather than something you have to already know about.
+            val bottomTabs = buildList {
+                tabs.forEach { service ->
+                    add(
+                        if (service == Service.MAIL) {
+                            Triple(Tabs.MAIL, service.label, Icons.Filled.MailOutline)
+                        } else {
+                            Triple(Tabs.SMS, service.label, Icons.AutoMirrored.Filled.Chat)
+                        },
+                    )
+                }
+                if (phone.enabled && tokens.isNotEmpty()) {
+                    add(Triple(Tabs.PHONE, "Téléphone", Icons.Filled.Dialpad))
+                }
+                if (genfox.enabled && tokens.isNotEmpty()) {
+                    add(Triple(Tabs.GENFOX, "Gen", Icons.Filled.AutoAwesome))
+                }
+                if (agenda.enabled && tokens.isNotEmpty()) {
+                    add(Triple(Tabs.AGENDA, "Agenda", Icons.Filled.CalendarMonth))
+                    add(Triple(Tabs.TASKS, "Tâches", Icons.Filled.Checklist))
+                }
+            }
+            if (bottomTabs.size > 1 && onRoot) {
+                // ⚠️ Au-delà de quatre onglets, Material3 serre les libellés et
+                // rétrécit les pictogrammes jusqu'à les rendre illisibles. Passé ce
+                // seuil on retire les libellés et on agrandit le picto : la barre
+                // porte alors six cibles franches plutôt que six timbres-poste.
+                // Le libellé reste en description, donc l'accessibilité n'y perd
+                // rien.
+                val serree = bottomTabs.size > 4
+                NavigationBar {
+                    bottomTabs.forEach { (tabRoute, label, icon) ->
+                        NavigationBarItem(
+                            selected = route == tabRoute,
+                            onClick = {
+                                nav.navigate(tabRoute) {
+                                    popUpTo(nav.graph.startDestinationId) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            },
+                            icon = {
+                                Icon(
+                                    icon,
+                                    contentDescription = label,
+                                    modifier = if (serree) Modifier.size(28.dp) else Modifier,
+                                )
+                            },
+                            label = if (serree) null else ({ Text(label) }),
+                            alwaysShowLabel = !serree,
+                        )
+                    }
                 }
             }
         }

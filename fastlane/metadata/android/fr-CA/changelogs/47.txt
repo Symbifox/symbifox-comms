@@ -1,0 +1,6 @@
+* L'application vise Android 16. Les barres système ne réservent plus leur
+  place : la bannière du haut et la barre d'onglets tiennent compte de
+  l'encoche et de la barre de navigation plutôt que de passer dessous
+* Rien d'autre ne change à l'usage. Version de mise en conformité avec les
+  boutiques, qui refusent depuis le 31 août 2026 tout paquet visant une
+  version antérieure
