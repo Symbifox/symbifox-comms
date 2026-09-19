@@ -24,7 +24,7 @@ Fonctions :
 
 L'application demande l'adresse de votre instance au premier lancement. Elle ne
 voit jamais votre mot de passe : la connexion passe par la page web d'Odoo, qui
-rend un jeton à usage unique.
+rend un token à usage unique.
 
 C'est un client. Il requiert les modules Odoo bf_email_management et
 bf_sms_archive, qui sont propriétaires (Business Source License 1.1).

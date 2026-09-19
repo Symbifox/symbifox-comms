@@ -29,6 +29,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.unit.dp
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
+import androidx.compose.ui.res.stringResource
+import com.bluefoxconsultant.sms.R
+import com.bluefoxconsultant.sms.ui.asString
 
 @Composable
 fun ArchivedScreen(
@@ -39,10 +42,10 @@ fun ArchivedScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Archivées", fontWeight = FontWeight.SemiBold) },
+                title = { Text(stringResource(R.string.sms_archived_title), fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -66,7 +69,7 @@ fun ArchivedScreen(
                     verticalArrangement = Arrangement.Center,
                 ) {
                     Text(
-                        vm.error ?: "Aucune conversation archivée.",
+                        vm.error?.asString() ?: stringResource(R.string.sms_archived_empty),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -77,7 +80,7 @@ fun ArchivedScreen(
                             showLineLabel = false,
                             onClick = { onOpenThread(thread.id) },
                             menuActions = listOf(
-                                ThreadAction("Désarchiver") { vm.unarchive(thread.id) },
+                                ThreadAction(stringResource(R.string.sms_archived_unarchive)) { vm.unarchive(thread.id) },
                             ),
                         )
                         HorizontalDivider(

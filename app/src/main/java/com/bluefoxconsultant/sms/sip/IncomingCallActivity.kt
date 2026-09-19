@@ -51,6 +51,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bluefoxconsultant.sms.ui.theme.BfSmsTheme
+import androidx.compose.ui.res.stringResource
+import com.bluefoxconsultant.sms.R
 
 private val CALL_GREEN = Color(0xFF2E7D32)
 private val CALL_RED = Color(0xFFC62828)
@@ -199,7 +201,7 @@ private fun EcranSonnerie(onFini: () -> Unit, onDemanderLeVerrouLeve: () -> Unit
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                text = nom.ifBlank { numero.ifBlank { "Appel entrant" } },
+                text = nom.ifBlank { numero.ifBlank { stringResource(R.string.common_incoming_call) } },
                 color = Color.White,
                 fontSize = 30.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -211,12 +213,14 @@ private fun EcranSonnerie(onFini: () -> Unit, onDemanderLeVerrouLeve: () -> Unit
             }
             Spacer(Modifier.height(14.dp))
             Text(
-                text = when {
-                    etabli -> "En communication"
-                    sip.call != null -> "Appel entrant"
-                    sip.status == SipStatus.REGISTERED -> "Le poste est prêt…"
-                    else -> "Réveil du poste…"
-                },
+                text = stringResource(
+                    when {
+                        etabli -> R.string.phone_in_call
+                        sip.call != null -> R.string.common_incoming_call
+                        sip.status == SipStatus.REGISTERED -> R.string.incoming_call_softphone_ready
+                        else -> R.string.incoming_call_waking_softphone
+                    },
+                ),
                 color = Color(0xFF90A4AE),
                 fontSize = 15.sp,
             )
@@ -246,7 +250,7 @@ private fun EcranSonnerie(onFini: () -> Unit, onDemanderLeVerrouLeve: () -> Unit
                     Icon(Icons.Filled.CallEnd, contentDescription = null,
                          modifier = Modifier.size(20.dp))
                     Spacer(Modifier.size(8.dp))
-                    Text("Refuser")
+                    Text(stringResource(R.string.common_decline_call))
                 }
                 Button(
                     // Répondre AVANT que ça sonne est le cas normal ici : la
@@ -258,7 +262,7 @@ private fun EcranSonnerie(onFini: () -> Unit, onDemanderLeVerrouLeve: () -> Unit
                     Icon(Icons.Filled.Call, contentDescription = null,
                          modifier = Modifier.size(20.dp))
                     Spacer(Modifier.size(8.dp))
-                    Text("Répondre")
+                    Text(stringResource(R.string.common_answer_call))
                 }
             }
         }
@@ -289,7 +293,10 @@ private fun EnCommunication(
                     modifier = Modifier.size(20.dp),
                 )
                 Spacer(Modifier.size(6.dp))
-                Text(if (muted) "Réactiver" else "Muet", color = Color.White)
+                Text(
+                    stringResource(if (muted) R.string.common_unmute else R.string.common_mute),
+                    color = Color.White,
+                )
             }
             TextButton(onClick = onSpeaker) {
                 Icon(
@@ -299,7 +306,10 @@ private fun EnCommunication(
                     modifier = Modifier.size(20.dp),
                 )
                 Spacer(Modifier.size(6.dp))
-                Text(if (speaker) "Haut-parleur" else "Écouteur", color = Color.White)
+                Text(
+                    stringResource(if (speaker) R.string.phone_loudspeaker else R.string.phone_earpiece),
+                    color = Color.White,
+                )
             }
         }
         Spacer(Modifier.height(24.dp))
@@ -310,7 +320,7 @@ private fun EnCommunication(
             Icon(Icons.Filled.CallEnd, contentDescription = null,
                  modifier = Modifier.size(20.dp))
             Spacer(Modifier.size(8.dp))
-            Text("Raccrocher")
+            Text(stringResource(R.string.common_hang_up))
         }
     }
 }

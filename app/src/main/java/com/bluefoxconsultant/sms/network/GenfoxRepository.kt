@@ -64,6 +64,16 @@ class GenfoxRepository(
         client.json.decodeFromString(client.get("/turn?turn_id=$turnId"))
     }
 
+    /**
+     * Le bouton Arrêter. Le tour s'enregistre ensuite avec ce qu'il avait
+     * écrit ; c'est [turn] qui le dit, pas cette réponse.
+     */
+    suspend fun stop(turnId: Int) = withContext(Dispatchers.IO) {
+        val client = api()
+        client.postJson("/stop", """{"turn_id":$turnId}""")
+        Unit
+    }
+
     suspend fun deleteSession(sessionId: Int) = withContext(Dispatchers.IO) {
         val client = api()
         client.postJson("/delete-session", """{"session_id":$sessionId}""")

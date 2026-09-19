@@ -31,6 +31,8 @@ import com.bluefoxconsultant.sms.data.Graph
 import com.bluefoxconsultant.sms.network.ApiException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.ui.res.stringResource
+import com.bluefoxconsultant.sms.R
 
 /**
  * Adds dictated text to whatever is already typed.
@@ -83,7 +85,7 @@ fun DictateButton(
             recording = true
             seconds = 0
         } else {
-            scope.launch { snackbar.showSnackbar("Le micro n'est pas disponible.") }
+            scope.launch { snackbar.showSnackbar(context.getString(R.string.speech_mic_unavailable)) }
         }
     }
 
@@ -91,7 +93,7 @@ fun DictateButton(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) begin()
-        else scope.launch { snackbar.showSnackbar("Sans accès au micro, pas de dictée.") }
+        else scope.launch { snackbar.showSnackbar(context.getString(R.string.dictation_mic_denied)) }
     }
 
     LaunchedEffect(recording) {
@@ -111,7 +113,7 @@ fun DictateButton(
                 recording = false
                 val file = recorder.stop()
                 if (file == null) {
-                    scope.launch { snackbar.showSnackbar("Rien n'a été enregistré.") }
+                    scope.launch { snackbar.showSnackbar(context.getString(R.string.dictation_nothing_recorded)) }
                     return@IconButton
                 }
                 sending = true
@@ -119,7 +121,7 @@ fun DictateButton(
                     try {
                         val text = Graph.speech.transcribe(file)
                         if (text.isBlank()) {
-                            snackbar.showSnackbar("Rien n'a été compris.")
+                            snackbar.showSnackbar(context.getString(R.string.speech_nothing_understood))
                         } else {
                             onText(text)
                         }
@@ -128,7 +130,7 @@ fun DictateButton(
                         // rate limited. Show it rather than a generic failure.
                         snackbar.showSnackbar(e.err)
                     } catch (e: Exception) {
-                        snackbar.showSnackbar("Transcription impossible.")
+                        snackbar.showSnackbar(context.getString(R.string.speech_transcription_failed))
                     } finally {
                         file.delete()
                         sending = false
@@ -149,10 +151,10 @@ fun DictateButton(
             )
             recording -> Icon(
                 Icons.Filled.Stop,
-                contentDescription = "Arrêter la dictée ($seconds s)",
+                contentDescription = stringResource(R.string.dictation_stop, seconds),
                 tint = MaterialTheme.colorScheme.error,
             )
-            else -> Icon(Icons.Filled.Mic, contentDescription = "Dicter")
+            else -> Icon(Icons.Filled.Mic, contentDescription = stringResource(R.string.dictation_start))
         }
     }
 }

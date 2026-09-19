@@ -1,0 +1,8 @@
+* Drafts: the ones started on the desktop in bf_email now show in the
+  Drafts section, and can be edited and sent from the phone
+* Drafts: the section keeps "Started on the desktop" and "On this device"
+  apart; the two do not behave the same offline
+* Drafts: a desktop draft that changed at the office is never overwritten
+  silently; the phone says so and lets you choose
+* Drafts: fixing a subject on the phone no longer rewrites the formatted
+  text written on the desktop

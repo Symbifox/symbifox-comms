@@ -48,7 +48,7 @@ ailleurs :
 
 | Ce qui est conservé | Comment |
 |---|---|
-| Le jeton d'accès à votre instance | chiffré (Android Keystore) |
+| Le token d'accès à votre instance | chiffré (Android Keystore) |
 | Un cache de votre boîte : première page de chaque dossier et conversations récemment ouvertes, **corps des messages compris** | fichiers privés à l'application |
 | L'adresse de l'instance, son nom et ses couleurs | fichiers privés à l'application |
 | Vos préférences : thème, gestes, tri | fichiers privés à l'application |
@@ -58,7 +58,7 @@ message d'erreur quand le réseau manque. Il n'est pas chiffré séparément : i
 est protégé par le cloisonnement d'Android, comme les données de toute
 application, et par le verrouillage de votre appareil.
 
-⚠️ Si le magasin de clés du téléphone se dérobe, le jeton retombe dans le
+⚠️ Si le magasin de clés du téléphone se dérobe, le token retombe dans le
 stockage privé ordinaire de l'application plutôt que d'être chiffré. Il reste
 inaccessible aux autres applications, mais nous préférons le dire.
 
@@ -95,7 +95,7 @@ d'audience, ni télémétrie, ni rapport d'erreur, ni publicité, ni code charg�
 distance. Blue Fox Inc. ne reçoit aucune donnée de votre usage.
 
 Aucun mot de passe ne transite par l'application : la connexion se fait dans la
-page web de votre instance, qui rend un jeton à usage unique.
+page web de votre instance, qui rend un token à usage unique.
 
 ## Ce que l'application ne fait pas
 
@@ -109,11 +109,11 @@ Vos données vivent sur votre instance Odoo, et leur conservation y est réglée
 par votre organisation. Sur l'appareil :
 
 - **désinstaller** l'application efface tout ce qu'elle gardait ;
-- **se déconnecter** dans l'application retire le jeton et le cache ;
+- **se déconnecter** dans l'application retire le token et le cache ;
 - depuis votre instance, la page **« Mes appareils »** (`/my/appareils`) liste
   les appareils appariés et permet d'en retirer un, ou tous.
 
-⚠️ Retirer un appareil ne l'efface pas : il garde son jeton, celui-ci n'ouvre
+⚠️ Retirer un appareil ne l'efface pas : il garde son token, celui-ci n'ouvre
 simplement plus rien.
 
 ## Vos droits

@@ -18,8 +18,8 @@ android {
         applicationId = "com.bluefoxconsultant.sms"
         minSdk = 26
         targetSdk = 36
-        versionCode = 47
-        versionName = "2.39.0"
+        versionCode = 52
+        versionName = "2.44.0"
     }
 
     signingConfigs {
@@ -46,7 +46,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 
     lint {
         // False positive: we use ComponentActivity (not Fragment) for registerForActivityResult.
@@ -79,7 +82,18 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.security.crypto)
 
-    implementation(libs.unifiedpush.connector)
+    // ⚠️ Le connecteur 3.x tire `com.google.crypto.tink:tink` (la variante
+    // Java, avec protobuf-java et gson) alors que security-crypto tire
+    // `tink-android` : les deux livrent les MÊMES classes
+    // `com.google.crypto.tink.*`, et le build échoue en « Duplicate class ».
+    // On écarte la variante Java et on épingle une seule tink-android, assez
+    // récente pour les deux : le déchiffrement WebPush du connecteur n'utilise
+    // que `subtle.*`, présent dans l'une comme dans l'autre. Aucune des deux ne
+    // dépend des services Google Play. Audit du 2026-09-08, C-M3 et C-F7.
+    implementation(libs.unifiedpush.connector) {
+        exclude(group = "com.google.crypto.tink", module = "tink")
+    }
+    implementation(libs.tink.android)
 
     // Wire-format tests decode real captured API responses on the JVM.
     testImplementation(libs.junit)

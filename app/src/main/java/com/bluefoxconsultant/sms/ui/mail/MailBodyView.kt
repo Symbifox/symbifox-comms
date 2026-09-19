@@ -74,8 +74,19 @@ fun MailBodyView(
                         view: WebView?,
                         request: WebResourceRequest?,
                     ): Boolean {
-                        // Hand every tapped link to the system browser.
-                        request?.url?.toString()?.let { runCatching { uriHandler.openUri(it) } }
+                        // Un lien TAPÉ, vers un schéma qu'on sait ouvrir, va au
+                        // système. Sans le geste, un document qui navigue de
+                        // lui-même (meta refresh, formulaire auto-soumis)
+                        // ouvrirait le navigateur à la lecture, donc confirmerait
+                        // la lecture et exposerait l'adresse IP même images
+                        // bloquées ; le serveur retire déjà ces balises, ceci
+                        // est la défense en profondeur. Les schémas d'autres
+                        // apps (intent:, market:, le nôtre) restent fermés.
+                        // Audit du 2026-09-08.
+                        val url = request?.url ?: return true
+                        if (request.hasGesture() && lienOuvrable(url)) {
+                            runCatching { uriHandler.openUri(url.toString()) }
+                        }
                         return true
                     }
 
@@ -167,3 +178,7 @@ private fun wrap(body: String, textColor: Color, background: Color): String {
         </head><body>$body</body></html>
     """.trimIndent()
 }
+
+/** Les seuls schémas qu'un lien de courriel peut ouvrir hors de l'app. */
+internal fun lienOuvrable(url: android.net.Uri): Boolean =
+    url.scheme?.lowercase() in setOf("http", "https", "mailto", "tel")

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -17,6 +18,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -37,10 +39,9 @@ import com.bluefoxconsultant.sms.data.AgendaCalendar
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
-
-private val FR_C = Locale.forLanguageTag("fr-CA")
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import com.bluefoxconsultant.sms.R
 
 /**
  * Poser une rencontre depuis le téléphone.
@@ -67,65 +68,67 @@ fun ComposerRencontre(
     var lieu by remember { mutableStateOf("") }
     var visio by remember { mutableStateOf("") }
     var date by remember { mutableStateOf(jour) }
-    var heure by remember { mutableIntStateOf(9) }
+    var heure by remember { mutableStateOf(LocalTime.of(9, 0)) }
     var duree by remember { mutableIntStateOf(60) }
+    var choixDate by remember { mutableStateOf(false) }
+    var choixHeure by remember { mutableStateOf(false) }
     var calendrier by remember { mutableStateOf(calendriers.firstOrNull()?.id) }
+    val jourCourt = formateurDate("EEEdMMM")
 
     ModalBottomSheet(onDismissRequest = onFermer, sheetState = sheetState) {
         Column(
             Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
+                // ⚠️ La feuille vit dans sa propre fenêtre : la colonne de
+                // l'accueil ne consomme pas le clavier pour elle. Sans ce
+                // rembourrage, le champ du bas passe sous le clavier.
+                .imePadding()
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("Nouvelle rencontre", style = MaterialTheme.typography.titleLarge)
+            Text(stringResource(R.string.agenda_new_meeting), style = MaterialTheme.typography.titleLarge)
 
             OutlinedTextField(
                 value = titre,
                 onValueChange = { titre = it },
-                label = { Text("Titre") },
+                label = { Text(stringResource(R.string.common_title)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            Text("Jour", style = MaterialTheme.typography.labelLarge)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                TextButton(onClick = { date = date.minusDays(1) }) { Text("−1 j") }
-                Text(
-                    DateTimeFormatter.ofPattern("EEEE d MMMM", FR_C).format(date)
-                        .replaceFirstChar { it.uppercase() },
-                    Modifier.align(Alignment.CenterVertically),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                TextButton(onClick = { date = date.plusDays(1) }) { Text("+1 j") }
-            }
-
-            Text("Début", style = MaterialTheme.typography.labelLarge)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf(8, 9, 10, 11, 13, 14, 15, 16, 17, 19).forEach { h ->
-                    FilterChip(
-                        selected = heure == h,
-                        onClick = { heure = h },
-                        label = { Text("%02d:00".format(h)) },
-                    )
+            // Les sélecteurs d'Android, pas des chips : « −1 j / +1 j » et dix
+            // heures rondes obligeaient à sortir de l'app pour une rencontre
+            // à 09:30 dans trois semaines. Voir `Selecteurs.kt`.
+            Text(stringResource(R.string.meeting_when), style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { choixDate = true }) {
+                    Text(capitaliser(jourCourt.format(date), jourCourt.locale))
+                }
+                OutlinedButton(onClick = { choixHeure = true }) {
+                    Text(HEURE.format(heure))
                 }
             }
 
-            Text("Durée", style = MaterialTheme.typography.labelLarge)
+            Text(stringResource(R.string.meeting_duration), style = MaterialTheme.typography.labelLarge)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf(15, 30, 60, 90, 120).forEach { m ->
                     FilterChip(
                         selected = duree == m,
                         onClick = { duree = m },
-                        label = { Text(if (m < 60) "$m min" else "${m / 60} h") },
+                        label = {
+                            Text(
+                                if (m < 60) pluralStringResource(R.plurals.agenda_duration_minutes, m, m)
+                                else pluralStringResource(R.plurals.agenda_duration_hours, m / 60, m / 60),
+                            )
+                        },
                     )
                 }
             }
 
             if (calendriers.isNotEmpty()) {
-                Text("Calendrier", style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.meeting_calendar), style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     calendriers.forEach { c ->
                         FilterChip(
@@ -149,14 +152,14 @@ fun ComposerRencontre(
             OutlinedTextField(
                 value = lieu,
                 onValueChange = { lieu = it },
-                label = { Text("Lieu (facultatif)") },
+                label = { Text(stringResource(R.string.meeting_location_optional)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
                 value = visio,
                 onValueChange = { visio = it },
-                label = { Text("Lien de visioconférence (facultatif)") },
+                label = { Text(stringResource(R.string.meeting_video_link_optional)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -173,8 +176,7 @@ fun ComposerRencontre(
                         // est celui affiché ; la conversion en UTC se fait ici,
                         // une fois, plutôt que d'envoyer une heure locale que
                         // le serveur devrait deviner.
-                        val debut = date.atTime(LocalTime.of(heure, 0))
-                            .atZone(zone).toInstant()
+                        val debut = date.atTime(heure).atZone(zone).toInstant()
                         onCreer(
                             titre.trim(),
                             debut,
@@ -184,10 +186,17 @@ fun ComposerRencontre(
                             calendrier,
                         )
                     },
-                ) { Text("Créer") }
-                TextButton(onClick = onFermer) { Text("Annuler") }
+                ) { Text(stringResource(R.string.common_create)) }
+                TextButton(onClick = onFermer) { Text(stringResource(R.string.common_cancel)) }
                 if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
             }
         }
+    }
+
+    if (choixDate) {
+        DialogueDate(initiale = date, onChoisir = { date = it }, onFermer = { choixDate = false })
+    }
+    if (choixHeure) {
+        DialogueHeure(initiale = heure, onChoisir = { heure = it }, onFermer = { choixHeure = false })
     }
 }

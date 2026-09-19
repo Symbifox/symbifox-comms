@@ -5,17 +5,20 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import com.bluefoxconsultant.sms.data.Graph
+import com.bluefoxconsultant.sms.R
+import com.bluefoxconsultant.sms.ui.UiText
+import com.bluefoxconsultant.sms.ui.uiText
 
 class InstanceViewModel : ViewModel() {
 
-    var error by mutableStateOf<String?>(null)
+    var error by mutableStateOf<UiText?>(null)
         private set
 
     /** Normalise, validate, and store the instance URL. Returns true on success. */
     fun submit(input: String) {
         val normalized = normalize(input)
         if (normalized == null) {
-            error = "Adresse invalide."
+            error = uiText(R.string.instance_invalid_address)
             return
         }
         error = null

@@ -7,6 +7,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,12 +33,12 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.Hearing
 import androidx.compose.material.icons.filled.HeadsetMic
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -61,6 +62,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -83,13 +85,23 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.withStateAtLeast
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bluefoxconsultant.sms.data.GenfoxMessage
+import com.bluefoxconsultant.sms.data.Graph
 import com.bluefoxconsultant.sms.data.GenfoxTool
 import com.bluefoxconsultant.sms.ui.speech.DictateButton
 import com.bluefoxconsultant.sms.ui.speech.appendSpoken
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.bluefoxconsultant.sms.ui.BoutonTheme
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import com.bluefoxconsultant.sms.R
+import com.bluefoxconsultant.sms.ui.UiText
+import com.bluefoxconsultant.sms.ui.asString
+import com.bluefoxconsultant.sms.ui.resolve
+import com.bluefoxconsultant.sms.ui.uiText
 
 /**
  * Ask GenFox from the phone.
@@ -111,6 +123,8 @@ fun GenfoxScreen(
     vm: GenfoxViewModel = viewModel(),
     assist: Boolean = false,
     onAssistConsumed: () -> Unit = {},
+    openSession: Int? = null,
+    onOpenSessionConsumed: () -> Unit = {},
 ) {
     val snackbar = remember { SnackbarHostState() }
     val listState = rememberLazyListState()
@@ -134,7 +148,7 @@ fun GenfoxScreen(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) handsFree.start()
-        else scope.launch { snackbar.showSnackbar("Sans accès au micro, pas de mains libres.") }
+        else scope.launch { snackbar.showSnackbar(context.getString(R.string.gen_mic_denied)) }
     }
 
     // Le bouton de la barre et le geste d'assistance passent par ici : demander
@@ -166,12 +180,22 @@ fun GenfoxScreen(
         onAssistConsumed()
     }
 
+    // La notification d'une réponse ouvre SA conversation, pas la dernière.
+    LaunchedEffect(openSession) {
+        val id = openSession ?: return@LaunchedEffect
+        vm.open(id)
+        onOpenSessionConsumed()
+    }
+
     // A finished turn is what drives the loop forward: say it, then listen again.
     val last = vm.messages.lastOrNull()
     LaunchedEffect(last?.state, last?.content) {
         if (!handsFree.isOn || last == null || last.isUser) return@LaunchedEffect
         when {
             last.isPending -> handsFree.waiting()
+            // Arrêter veut dire « tais-toi » : la boucle ne relit rien et ne
+            // rouvre pas le micro.
+            last.isStopped -> handsFree.stop()
             last.isError -> handsFree.failed()
             last.content.isNotBlank() -> handsFree.answered(last.content)
         }
@@ -179,12 +203,34 @@ fun GenfoxScreen(
 
     LaunchedEffect(vm.error) {
         vm.error?.let {
-            snackbar.showSnackbar(it)
+            snackbar.showSnackbar(it.resolve(context))
             vm.clearError()
         }
     }
     LaunchedEffect(vm.messages.size) {
         if (vm.messages.isNotEmpty()) listState.animateScrollToItem(vm.messages.lastIndex)
+    }
+
+    // Ligne d'état du tour en cours (BF #25718). ⚠️ Les bulles sont indexées
+    // par hashCode() : chaque sondage recrée celle du tour, et tout `remember`
+    // posé dedans repartirait à zéro toutes les 700 ms. Le début du tour, le
+    // dernier changement d'étape et les étapes dépliées vivent donc ici.
+    val enCours = vm.messages.lastOrNull()?.takeIf { it.isPending }
+    var debutTour by remember { mutableStateOf(0L) }
+    var derniereEtapeA by remember { mutableStateOf(0L) }
+    var maintenant by remember { mutableStateOf(System.currentTimeMillis()) }
+    val deplies = remember { mutableStateMapOf<Int, Boolean>() }
+    LaunchedEffect(enCours != null) {
+        if (enCours == null) return@LaunchedEffect
+        debutTour = System.currentTimeMillis()
+        derniereEtapeA = debutTour
+        while (true) {
+            maintenant = System.currentTimeMillis()
+            delay(1000)
+        }
+    }
+    LaunchedEffect(enCours?.tools?.size, enCours?.tools?.lastOrNull()?.detail) {
+        if (enCours != null) derniereEtapeA = System.currentTimeMillis()
     }
 
     Scaffold(
@@ -193,7 +239,7 @@ fun GenfoxScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("Gen", fontWeight = FontWeight.SemiBold, maxLines = 1)
+                        Text(stringResource(R.string.tab_gen), fontWeight = FontWeight.SemiBold, maxLines = 1)
                         if (vm.sessionName.isNotBlank()) {
                             Text(
                                 vm.sessionName,
@@ -205,6 +251,7 @@ fun GenfoxScreen(
                     }
                 },
                 actions = {
+                    BoutonTheme()
                     IconButton(
                         onClick = {
                             if (handsFree.isOn) handsFree.stop() else startHandsFree()
@@ -212,15 +259,15 @@ fun GenfoxScreen(
                     ) {
                         Icon(
                             if (handsFree.isOn) Icons.Filled.Hearing else Icons.Filled.HeadsetMic,
-                            contentDescription = if (handsFree.isOn) "Arrêter les mains libres"
-                            else "Mains libres",
+                            contentDescription = if (handsFree.isOn) stringResource(R.string.gen_hands_free_stop)
+                            else stringResource(R.string.gen_hands_free),
                         )
                     }
                     IconButton(onClick = { vm.reset() }) {
-                        Icon(Icons.Filled.Add, contentDescription = "Nouvelle conversation")
+                        Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.gen_new_conversation))
                     }
                     IconButton(onClick = { vm.refreshSessions(); historyOpen = true }) {
-                        Icon(Icons.Filled.History, contentDescription = "Conversations")
+                        Icon(Icons.Filled.History, contentDescription = stringResource(R.string.gen_conversations))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -250,7 +297,16 @@ fun GenfoxScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         items(vm.messages, key = { it.hashCode() }) { message ->
-                            Bubble(message, onSpeak = { handsFree.say(message.content) })
+                            Bubble(
+                                message,
+                                attente = if (message.isPending) Attente(
+                                    secondes = (maintenant - debutTour) / 1000,
+                                    depuisEtape = (maintenant - derniereEtapeA) / 1000,
+                                ) else null,
+                                deplie = deplies[message.id] == true,
+                                onDeplier = { deplies[message.id] = deplies[message.id] != true },
+                                onSpeak = { handsFree.say(message.content) },
+                            )
                         }
                     }
                 }
@@ -260,14 +316,27 @@ fun GenfoxScreen(
                 heard = handsFree.heard,
                 phaseSince = handsFree.phaseSince,
             )
-            Asker(asking = vm.asking, snackbar = snackbar, onAsk = vm::ask)
+            val config by Graph.genfoxStore.config.collectAsStateWithLifecycle()
+            Asker(
+                asking = vm.asking,
+                // Sans serveur qui sache arrêter, le bouton reste le témoin
+                // d'attente d'avant : un Arrêter qui ne fait rien serait pire.
+                canStop = config.canStop,
+                stopEnabled = vm.tourArretable != null && !vm.stopping,
+                stopping = vm.stopping,
+                questionRendue = vm.questionRendue,
+                onQuestionRestituee = vm::questionRestituee,
+                snackbar = snackbar,
+                onAsk = vm::ask,
+                onStop = vm::stop,
+            )
         }
     }
 
     if (historyOpen) {
         ModalBottomSheet(onDismissRequest = { historyOpen = false }) {
             Text(
-                "Conversations",
+                stringResource(R.string.gen_conversations),
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
             )
@@ -283,13 +352,33 @@ fun GenfoxScreen(
                         )
                         .padding(horizontal = 20.dp, vertical = 14.dp),
                 ) {
-                    Text(
-                        session.name.ifBlank { "Sans titre" },
-                        modifier = Modifier.weight(1f),
-                        maxLines = 1,
-                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            session.name.ifBlank { stringResource(R.string.gen_untitled) },
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            fontWeight = if (session.id == vm.sessionId) FontWeight.SemiBold
+                            else FontWeight.Normal,
+                        )
+                        // Plusieurs conversations travaillent à la fois : la
+                        // liste dit où une réponse va tomber.
+                        if (session.busy) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(
+                                    strokeWidth = 1.5.dp,
+                                    modifier = Modifier.size(10.dp),
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    stringResource(R.string.gen_session_busy),
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
                     IconButton(onClick = { vm.delete(session.id) }) {
-                        Icon(Icons.Filled.Delete, contentDescription = "Supprimer")
+                        Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.gen_delete))
                     }
                 }
             }
@@ -305,15 +394,13 @@ private fun EmptyState(modifier: Modifier = Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            "Demandez quelque chose",
+            stringResource(R.string.gen_empty_title),
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
         )
         Spacer(Modifier.size(8.dp))
         Text(
-            "Mêmes conversations et mêmes outils qu'au bureau : Gen peut " +
-                "consulter comme modifier. La réponse s'écrit ici au fil de l'eau ; " +
-                "si vous rangez le téléphone, une notification vous préviendra.",
+            stringResource(R.string.gen_empty_text),
             fontSize = 13.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -321,7 +408,13 @@ private fun EmptyState(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun Bubble(message: GenfoxMessage, onSpeak: () -> Unit) {
+private fun Bubble(
+    message: GenfoxMessage,
+    attente: Attente?,
+    deplie: Boolean,
+    onDeplier: () -> Unit,
+    onSpeak: () -> Unit,
+) {
     val mine = message.isUser
     val background = when {
         mine -> BrandAccent
@@ -337,10 +430,10 @@ private fun Bubble(message: GenfoxMessage, onSpeak: () -> Unit) {
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = if (mine) Alignment.End else Alignment.Start,
     ) {
-        // Tools appear as they are called, above the answer they produced —
-        // the same information the desktop panel shows live.
+        // Les étapes, repliées au-dessus de la réponse comme au bureau : une
+        // pastille par outil faisait 12 pastilles par tour en médiane.
         if (!mine && message.tools.isNotEmpty()) {
-            ToolStrip(message.tools, running = message.isPending)
+            Etapes(message.tools, attente, deplie, onDeplier)
         }
         Box(
             modifier = Modifier
@@ -356,19 +449,38 @@ private fun Bubble(message: GenfoxMessage, onSpeak: () -> Unit) {
                 )
                 .padding(horizontal = 12.dp, vertical = 9.dp),
         ) {
-            when {
-                // Nothing written yet: the assistant is reading, not typing.
-                message.isPending && message.content.isBlank() -> ThinkingDots(foreground)
-                else -> SelectionContainer {
+            Column {
+                // Une bulle d'erreur posée par l'app porte son texte à part, traduit.
+                // Un tour arrêté avant tout mot n'a que le repli du serveur
+                // (« (No response) ») : il ne se montre pas.
+                val contenu = message.avis?.asString()
+                    ?: message.content.takeUnless { message.isStopped && it == NO_RESPONSE }
+                    ?: ""
+                if (contenu.isNotBlank() || (!message.isPending && !message.isStopped)) {
+                    SelectionContainer {
+                        Text(
+                            // Markdown, because that is what the assistant writes for
+                            // the desktop panel. A caret while it streams, so a pause
+                            // reads as thinking rather than as a finished answer.
+                            text = renderMarkdown(
+                                contenu + if (message.isPending) "▌" else "",
+                            ),
+                            color = foreground,
+                            fontSize = 15.sp,
+                        )
+                    }
+                }
+                if (attente != null) {
+                    if (contenu.isNotBlank()) Spacer(Modifier.size(6.dp))
+                    LigneEtat(foreground, libelleAttente(message, attente).asString(), attente.secondes)
+                }
+                if (message.isStopped) {
+                    if (contenu.isNotBlank()) Spacer(Modifier.size(4.dp))
                     Text(
-                        // Markdown, because that is what the assistant writes for
-                        // the desktop panel. A caret while it streams, so a pause
-                        // reads as thinking rather than as a finished answer.
-                        text = renderMarkdown(
-                            message.content + if (message.isPending) "▌" else "",
-                        ),
-                        color = foreground,
-                        fontSize = 15.sp,
+                        stringResource(R.string.gen_stopped),
+                        fontSize = 12.sp,
+                        fontStyle = FontStyle.Italic,
+                        color = foreground.copy(alpha = 0.75f),
                     )
                 }
             }
@@ -378,7 +490,7 @@ private fun Bubble(message: GenfoxMessage, onSpeak: () -> Unit) {
                 IconButton(onClick = onSpeak, modifier = Modifier.size(32.dp)) {
                     Icon(
                         Icons.Filled.VolumeUp,
-                        contentDescription = "Lire à voix haute",
+                        contentDescription = stringResource(R.string.gen_read_aloud),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp),
                     )
@@ -401,70 +513,102 @@ private fun Bubble(message: GenfoxMessage, onSpeak: () -> Unit) {
  * grandeur que le Cockpit Odoo et que le panneau web — si ce chiffre change
  * ici, il doit changer aux trois endroits, sinon les écrans se contredisent.
  */
+@Composable
 private fun usageLabel(message: GenfoxMessage): String {
     val usage = message.usage
     val tokens = if (usage.displayTokens > 0) usage.displayTokens else usage.outputTokens
     val parts = mutableListOf<String>()
-    parts += if (tokens >= 1000) "%.1f k jetons".format(tokens / 1000.0)
-    else "$tokens jetons"
-    if (usage.costUsd > 0) parts += "%.3f $".format(usage.costUsd)
+    parts += if (tokens >= 1000) stringResource(R.string.gen_usage_thousand_tokens, tokens / 1000.0)
+    else pluralStringResource(R.plurals.gen_usage_tokens, tokens, tokens)
+    if (usage.costUsd > 0) parts += stringResource(R.string.gen_usage_cost, usage.costUsd)
     if (usage.durationMs > 0) parts += "%.1f s".format(usage.durationMs / 1000.0)
     return parts.joinToString(" · ")
 }
 
+/** Le repli que le serveur enregistre quand un tour n'a rien écrit. */
+private const val NO_RESPONSE = "(No response)"
+
+/** Où en est le tour en cours, en secondes, lu au niveau de l'écran. */
+private data class Attente(val secondes: Long, val depuisEtape: Long)
+
+/**
+ * Formules du renard, les mêmes que le panneau web (gen_wait.js). Le mobile ne
+ * reçoit pas les pings de réflexion : il les tire quand aucune étape neuve
+ * n'est arrivée depuis un moment, et en change toutes les six secondes.
+ * ⚠️ Dans l'ordre de `foxPhrase`, et mot pour mot dans les deux langues : les
+ * msgid de gen_wait.js en anglais, son `fr_CA.po` en français.
+ */
+private val FORMULES_RENARD = listOf(
+    R.string.gen_fox_0,
+    R.string.gen_fox_1,
+    R.string.gen_fox_2,
+    R.string.gen_fox_3,
+    R.string.gen_fox_4,
+    R.string.gen_fox_5,
+    R.string.gen_fox_6,
+    R.string.gen_fox_7,
+    R.string.gen_fox_8,
+    R.string.gen_fox_9,
+    R.string.gen_fox_10,
+    R.string.gen_fox_11,
+    R.string.gen_fox_12,
+)
+
+/** Une étape neuve reste à l'écran ce temps-là avant de céder la place au renard. */
+private const val ETAPE_RECENTE_S = 8L
+
+private fun libelleAttente(message: GenfoxMessage, attente: Attente): UiText {
+    val derniere = message.tools.lastOrNull()
+    if (derniere != null && attente.depuisEtape < ETAPE_RECENTE_S) return derniere.texte
+    val rang = (message.id + attente.secondes / 6).toInt()
+    return uiText(FORMULES_RENARD[Math.floorMod(rang, FORMULES_RENARD.size)])
+}
+
+/** « 42 s », « 1 min 05 s » : le même format que le panneau web. */
+private fun duree(secondes: Long): String =
+    if (secondes < 60) "$secondes s" else "${secondes / 60} min ${"%02d".format(secondes % 60)} s"
+
 @Composable
-private fun ToolStrip(tools: List<GenfoxTool>, running: Boolean) {
-    Row(
-        modifier = Modifier.padding(bottom = 3.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        // The last one is the one in flight while the turn runs; it pulses.
-        tools.forEachIndexed { index, tool ->
-            val live = running && index == tools.lastIndex
-            val alpha by if (live) {
-                rememberInfiniteTransition(label = "outil").animateFloat(
-                    initialValue = 0.45f,
-                    targetValue = 1f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(700, easing = LinearEasing),
-                        repeatMode = RepeatMode.Reverse,
-                    ),
-                    label = "pouls",
+private fun Etapes(
+    tools: List<GenfoxTool>,
+    attente: Attente?,
+    deplie: Boolean,
+    onDeplier: () -> Unit,
+) {
+    val couleur = MaterialTheme.colorScheme.onSurfaceVariant
+    Column(modifier = Modifier.widthIn(max = 320.dp).padding(bottom = 3.dp)) {
+        // Pendant que Gen réfléchit, le résumé rappelle la dernière étape : la
+        // ligne d'état est alors passée au renard.
+        val rappel = if (attente != null && attente.depuisEtape >= ETAPE_RECENTE_S) {
+            " · " + tools.last().texte.asString()
+        } else {
+            ""
+        }
+        Text(
+            (if (deplie) "▾ " else "▸ ") +
+                pluralStringResource(R.plurals.gen_steps, tools.size, tools.size) + rappel,
+            fontSize = 12.sp,
+            color = couleur,
+            maxLines = if (deplie) 3 else 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.clickable(onClick = onDeplier).padding(vertical = 2.dp),
+        )
+        if (deplie) {
+            tools.forEachIndexed { index, tool ->
+                Text(
+                    "${index + 1}. ${tool.texte.asString()}",
+                    fontSize = 12.sp,
+                    color = couleur,
+                    modifier = Modifier.padding(start = 10.dp, top = 1.dp),
                 )
-            } else {
-                remember { mutableStateOf(1f) }
-            }
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = alpha),
-                shape = RoundedCornerShape(8.dp),
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
-                ) {
-                    Icon(
-                        Icons.Filled.Build,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(11.dp),
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                        tool.short,
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                    )
-                }
             }
         }
     }
 }
 
-/** Three dots breathing — the assistant is working before any word exists. */
+/** Trois points qui respirent, ce que Gen fait, et depuis combien de temps. */
 @Composable
-private fun ThinkingDots(color: Color) {
+private fun LigneEtat(color: Color, libelle: String, secondes: Long) {
     val transition = rememberInfiniteTransition(label = "reflexion")
     Row(verticalAlignment = Alignment.CenterVertically) {
         repeat(3) { index ->
@@ -480,22 +624,42 @@ private fun ThinkingDots(color: Color) {
             Box(
                 modifier = Modifier
                     .padding(horizontal = 2.dp)
-                    .size(7.dp)
+                    .size(6.dp)
                     .background(color.copy(alpha = alpha), CircleShape),
             )
         }
         Spacer(Modifier.width(8.dp))
-        Text("Gen travaille…", fontSize = 13.sp, color = color.copy(alpha = 0.75f))
+        Text(
+            libelle,
+            fontSize = 13.sp,
+            color = color.copy(alpha = 0.85f),
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(duree(secondes), fontSize = 12.sp, color = color.copy(alpha = 0.7f), maxLines = 1)
     }
 }
 
 @Composable
 private fun Asker(
     asking: Boolean,
+    canStop: Boolean,
+    stopEnabled: Boolean,
+    stopping: Boolean,
+    questionRendue: String?,
+    onQuestionRestituee: () -> Unit,
     snackbar: SnackbarHostState,
     onAsk: (String) -> Unit,
+    onStop: () -> Unit,
 ) {
     var text by remember { mutableStateOf("") }
+    // Une question que le serveur n'a pas prise revient ici, devant ce qu'on
+    // aurait commencé à taper entre-temps.
+    LaunchedEffect(questionRendue) {
+        val rendue = questionRendue ?: return@LaunchedEffect
+        text = if (text.isBlank()) rendue else rendue + "\n" + text
+        onQuestionRestituee()
+    }
 
     Surface(
         tonalElevation = 3.dp,
@@ -512,7 +676,7 @@ private fun Asker(
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it },
-                placeholder = { Text("Votre question") },
+                placeholder = { Text(stringResource(R.string.gen_question_hint)) },
                 maxLines = 5,
                 modifier = Modifier.weight(1f),
                 // Asking out loud is the point of having dictation at all.
@@ -523,36 +687,72 @@ private fun Asker(
                 },
             )
             Spacer(Modifier.width(8.dp))
-            val enabled = text.isNotBlank() && !asking
-            IconButton(
-                onClick = {
-                    if (enabled) {
-                        onAsk(text)
-                        text = ""
+            if (asking && canStop) {
+                // Pendant que Gen répond ICI, le bouton d'envoi devient Arrêter
+                // (#25734). La zone de saisie reste libre : on prépare la
+                // question suivante, ou on la pose dans une autre conversation.
+                IconButton(
+                    onClick = onStop,
+                    enabled = stopEnabled,
+                    modifier = Modifier
+                        .padding(bottom = 4.dp)
+                        .size(48.dp)
+                        .background(
+                            // Le disque sombre au carré blanc des assistants,
+                            // pas le rouge d'une erreur : arrêter est un geste
+                            // ordinaire, pas un incident.
+                            color = if (stopEnabled) MaterialTheme.colorScheme.inverseSurface
+                            else MaterialTheme.colorScheme.surfaceVariant,
+                            shape = CircleShape,
+                        ),
+                ) {
+                    if (stopping) {
+                        CircularProgressIndicator(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    } else {
+                        Icon(
+                            Icons.Filled.Stop,
+                            contentDescription = stringResource(R.string.gen_stop),
+                            tint = if (stopEnabled) MaterialTheme.colorScheme.inverseOnSurface
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
-                },
-                enabled = enabled,
-                modifier = Modifier
-                    .padding(bottom = 4.dp)
-                    .size(48.dp)
-                    .background(
-                        color = if (enabled) BrandAccent
-                        else MaterialTheme.colorScheme.surfaceVariant,
-                        shape = CircleShape,
-                    ),
-            ) {
-                if (asking) {
-                    CircularProgressIndicator(
-                        color = Color.White,
-                        strokeWidth = 2.dp,
-                        modifier = Modifier.size(22.dp),
-                    )
-                } else {
-                    Icon(
-                        Icons.AutoMirrored.Filled.Send,
-                        contentDescription = "Envoyer",
-                        tint = Color.White,
-                    )
+                }
+            } else {
+                val enabled = text.isNotBlank() && !asking
+                IconButton(
+                    onClick = {
+                        if (enabled) {
+                            onAsk(text)
+                            text = ""
+                        }
+                    },
+                    enabled = enabled,
+                    modifier = Modifier
+                        .padding(bottom = 4.dp)
+                        .size(48.dp)
+                        .background(
+                            color = if (enabled) BrandAccent
+                            else MaterialTheme.colorScheme.surfaceVariant,
+                            shape = CircleShape,
+                        ),
+                ) {
+                    if (asking) {
+                        CircularProgressIndicator(
+                            color = Color.White,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    } else {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Send,
+                            contentDescription = stringResource(R.string.common_send),
+                            tint = Color.White,
+                        )
+                    }
                 }
             }
         }
@@ -575,10 +775,10 @@ private fun Asker(
 @Composable
 private fun HandsFreeBand(state: HandsFreeState, heard: String?, phaseSince: Long) {
     val label = when (state) {
-        HandsFreeState.Listening -> "J'écoute — parlez, je m'arrête au silence"
-        HandsFreeState.Sending -> "Transcription de ce que vous venez de dire"
-        HandsFreeState.Waiting -> "Gen réfléchit"
-        HandsFreeState.Speaking -> "Réponse à voix haute"
+        HandsFreeState.Listening -> stringResource(R.string.gen_hands_free_listening)
+        HandsFreeState.Sending -> stringResource(R.string.gen_hands_free_sending)
+        HandsFreeState.Waiting -> stringResource(R.string.gen_hands_free_waiting)
+        HandsFreeState.Speaking -> stringResource(R.string.gen_hands_free_speaking)
         HandsFreeState.Off -> ""
     }
     if (label.isBlank()) return
@@ -622,7 +822,7 @@ private fun HandsFreeBand(state: HandsFreeState, heard: String?, phaseSince: Lon
             if (!heard.isNullOrBlank() && state != HandsFreeState.Listening) {
                 Spacer(Modifier.size(4.dp))
                 Text(
-                    "« $heard »",
+                    stringResource(R.string.gen_heard, heard),
                     color = Color.White.copy(alpha = 0.9f),
                     fontSize = 12.sp,
                     fontStyle = FontStyle.Italic,

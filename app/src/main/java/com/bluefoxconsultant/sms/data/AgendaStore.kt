@@ -24,15 +24,34 @@ class AgendaStore(private val repo: AgendaRepository) {
     private val mutex = Mutex()
     private var loaded = false
 
+    /**
+     * Une tâche que quelqu'un veut voir dans l'onglet Tâches, venue d'ailleurs
+     * — d'un courriel classé dessus. Même patron que `ShareIntake` : l'app
+     * bascule d'onglet sur ce signal, et l'écran des tâches le CONSOMME une
+     * fois qu'il a ouvert la fiche. Un identifiant laissé ici rouvrirait la
+     * même fiche à chaque retour sur l'onglet.
+     */
+    private val _demandeTache = MutableStateFlow<Int?>(null)
+    val demandeTache: StateFlow<Int?> = _demandeTache.asStateFlow()
+
+    fun demanderTache(id: Int) { if (id > 0) _demandeTache.value = id }
+
+    fun consommerTache() { _demandeTache.value = null }
+
     suspend fun ensureLoaded() {
         if (loaded) return
         mutex.withLock {
             if (loaded) return
-            _ping.value = repo.ping() ?: AgendaPing()
+            // ⚠️ `loaded` seulement si le serveur a RÉPONDU. Une sonde qui
+            // échoue hors ligne figeait « pas d'agenda » pour toute la vie du
+            // processus ; l'accueil la rejoue à la minute tant qu'elle n'a
+            // pas répondu. Audit du 2026-09-08.
+            val ping = repo.ping()
+            _ping.value = ping ?: AgendaPing()
             if (_ping.value.enabled) {
                 _config.value = repo.config() ?: AgendaConfig()
             }
-            loaded = true
+            loaded = ping != null
         }
     }
 

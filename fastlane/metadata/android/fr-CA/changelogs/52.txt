@@ -1,0 +1,14 @@
+* Courriel, en répondant : les destinataires se voient et se modifient (À, Cc,
+  et un Cci), l'objet aussi, et le message d'origine s'affiche sous le texte
+  (à masquer depuis le menu ⋮)
+* Courriel : choisir l'adresse d'envoi. Une réponse part par défaut de la boîte
+  qui a reçu, comme au poste, avec sa signature
+* Courriel : le gras, l'italique et les listes s'affichent comme ils seront
+  reçus, sans astérisques
+* Courriel : « Annuler » quelques secondes après Envoyer (délai réglable dans
+  les paramètres), programmer un envoi, classer un courriel neuf sur une fiche,
+  jeter un brouillon sur place, et les groupes de destinataires
+* Brouillons : une pile « Programmés », d'où un envoi se retient
+* Hors ligne : un courriel mis en attente garde ses pièces jointes, ses copies
+  et sa mise en forme ; refusé, il revient dans les brouillons
+* Rouvrir un brouillon gardé sur le téléphone ne ferme plus l'app

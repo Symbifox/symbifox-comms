@@ -23,7 +23,8 @@ private val AvatarPalette = listOf(
 
 fun avatarColor(key: String): Color {
     if (key.isBlank()) return AvatarPalette.first()
-    return AvatarPalette[abs(key.hashCode()) % AvatarPalette.size]
+    // `abs(Int.MIN_VALUE)` reste négatif : `floorMod` ne le fait jamais.
+    return AvatarPalette[Math.floorMod(key.hashCode(), AvatarPalette.size)]
 }
 
 fun relativeTime(epochMs: Long?): String {

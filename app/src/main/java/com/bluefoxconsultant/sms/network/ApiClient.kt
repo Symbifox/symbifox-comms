@@ -58,10 +58,13 @@ class ApiClient(
                 builder.header("Authorization", "Bearer $token")
             }
             val response = chain.proceed(builder.build())
-            if (response.code == 401 && !unauthenticated) {
+            if (response.code == 401 && !unauthenticated && token != null) {
                 // Session expired / revoked — drop ONLY this service's token so
                 // the UI routes that tab back to login.
-                tokenStore.clearToken(service)
+                // ⚠️ Et seulement si c'est ENCORE le jeton envoyé : une requête
+                // partie avant une reconnexion ne doit pas effacer la session
+                // neuve en revenant.
+                tokenStore.clearToken(service, siJeton = token)
             }
             response
         }

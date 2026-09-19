@@ -8,12 +8,25 @@ import androidx.lifecycle.viewModelScope
 import com.bluefoxconsultant.sms.data.Graph
 import com.bluefoxconsultant.sms.data.Line
 import com.bluefoxconsultant.sms.data.Thread
+import com.bluefoxconsultant.sms.ui.Sequenceur
 import com.bluefoxconsultant.sms.ui.relectureUtile
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.bluefoxconsultant.sms.data.nonLusDesFils
+import com.bluefoxconsultant.sms.R
+import com.bluefoxconsultant.sms.ui.UiText
+import com.bluefoxconsultant.sms.ui.uiPlural
+import com.bluefoxconsultant.sms.ui.uiText
 
 class ThreadsViewModel : ViewModel() {
+
+    /**
+     * Voir `Sequenceur` : la dernière lecture lancée est la seule qui écrit.
+     * ⚠️ Déclaré AVANT `init`, qui lance la première lecture.
+     */
+    private val lecture = Sequenceur()
 
     var threads by mutableStateOf<List<Thread>>(emptyList())
         private set
@@ -26,7 +39,7 @@ class ThreadsViewModel : ViewModel() {
 
     /** Dernière lecture RÉUSSIE. Voir `ui/Rafraichissement.kt`. */
     private var lu = 0L
-    var error by mutableStateOf<String?>(null)
+    var error by mutableStateOf<UiText?>(null)
         private set
 
     var selectedLineId by mutableStateOf<Int?>(null)
@@ -72,24 +85,44 @@ class ThreadsViewModel : ViewModel() {
      * remplacer par « impossible de charger » sur une coupure de deux secondes.
      */
     private fun charger(silencieux: Boolean) {
-        if (!silencieux) {
+        // Une lecture silencieuse qui remplace un tirer en vol en hérite :
+        // l'indicateur reste, et l'erreur se dira. Voir `AgendaViewModel.charger`.
+        val muet = silencieux && !refreshing
+        if (!muet) {
             refreshing = true
             error = null
         }
-        viewModelScope.launch {
+        // La ligne et la recherche auxquelles la réponse correspondra, prises
+        // au LANCEMENT (Q-M6) : une recherche tapée pendant la lecture ne doit
+        // ni recevoir les fils de l'ancienne, ni faire tomber la pastille.
+        val ligne = selectedLineId
+        val terme = searchTerm
+        lecture.lancer(viewModelScope) { n ->
             try {
-                threads = Graph.sms.threads(
+                val lus = Graph.sms.threads(
                     archived = 0,
-                    lineId = selectedLineId,
-                    search = searchTerm,
+                    lineId = ligne,
+                    search = terme,
                 )
+                if (!lecture.estCourante(n)) return@lancer
+                threads = lus
+                // La pastille de l'onglet suit ce que l'écran vient de lire —
+                // mais pas une recherche ni une ligne filtrée, qui ne voient
+                // qu'une partie des fils et feraient tomber le compte à tort.
+                if (terme.isBlank() && ligne == null) {
+                    Graph.badges.poserSms(nonLusDesFils(lus))
+                }
                 lu = System.currentTimeMillis()
                 error = null
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                if (!silencieux) error = "Impossible de charger les messages."
+                if (!muet && lecture.estCourante(n)) error = uiText(R.string.sms_threads_load_failed)
             } finally {
-                refreshing = false
-                firstLoadDone = true
+                if (lecture.estCourante(n)) {
+                    refreshing = false
+                    firstLoadDone = true
+                }
             }
         }
     }
@@ -139,7 +172,7 @@ class ThreadsViewModel : ViewModel() {
     var undoable by mutableStateOf<(() -> Unit)?>(null)
         private set
     /** Ce que l'annulation défera — « Archivé » ou « 5 archivées ». */
-    var undoLabel by mutableStateOf("Archivé")
+    var undoLabel by mutableStateOf(uiText(R.string.sms_threads_archived_one))
         private set
 
     fun clearUndo() {
@@ -148,7 +181,7 @@ class ThreadsViewModel : ViewModel() {
 
     fun archive(threadId: Int) {
         threads = threads.filterNot { it.id == threadId }
-        undoLabel = "Archivé"
+        undoLabel = uiText(R.string.sms_threads_archived_one)
         undoable = { unarchive(threadId) }
         viewModelScope.launch {
             try {
@@ -166,7 +199,7 @@ class ThreadsViewModel : ViewModel() {
                 Graph.sms.archive(threadId, archived = false)
                 refresh()
             } catch (e: Exception) {
-                error = "Annulation impossible."
+                error = uiText(R.string.sms_threads_undo_failed)
             }
         }
     }
@@ -177,7 +210,7 @@ class ThreadsViewModel : ViewModel() {
                 Graph.sms.pin(threadId)
                 refresh() // server re-sorts pinned first
             } catch (e: Exception) {
-                error = "Action impossible."
+                error = uiText(R.string.sms_threads_action_failed)
             }
         }
     }
@@ -225,7 +258,8 @@ class ThreadsViewModel : ViewModel() {
         if (targets.isEmpty()) return
         clearSelection()
         threads = threads.filterNot { it.id in targets }
-        undoLabel = if (targets.size == 1) "Archivé" else "${targets.size} archivées"
+        undoLabel = if (targets.size == 1) uiText(R.string.sms_threads_archived_one)
+        else uiPlural(R.plurals.sms_threads_archived_count, targets.size)
         undoable = { unarchiveMany(targets) }
         viewModelScope.launch {
             var failed = 0
@@ -237,7 +271,7 @@ class ThreadsViewModel : ViewModel() {
                 }
             }
             if (failed > 0) {
-                error = "Archivage impossible pour $failed conversation(s)."
+                error = uiPlural(R.plurals.sms_threads_archive_failed_count, failed)
                 refresh()
             }
         }
@@ -254,7 +288,7 @@ class ThreadsViewModel : ViewModel() {
                     failed++
                 }
             }
-            if (failed > 0) error = "Annulation incomplète."
+            if (failed > 0) error = uiText(R.string.sms_threads_undo_incomplete)
             refresh()
         }
     }
@@ -280,7 +314,7 @@ class ThreadsViewModel : ViewModel() {
                     failed++
                 }
             }
-            if (failed > 0) error = "Action impossible pour $failed conversation(s)."
+            if (failed > 0) error = uiPlural(R.plurals.sms_threads_action_failed_count, failed)
             refresh() // le serveur retrie, épinglés d'abord
         }
     }

@@ -24,6 +24,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -33,8 +35,12 @@ import androidx.compose.ui.unit.sp
 import com.bluefoxconsultant.sms.data.MailMessage
 import com.bluefoxconsultant.sms.ui.relativeTime
 import com.bluefoxconsultant.sms.ui.threads.Avatar
+import com.bluefoxconsultant.sms.data.Graph
 import com.bluefoxconsultant.sms.data.OdooLinks
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
+import androidx.compose.ui.res.stringResource
+import com.bluefoxconsultant.sms.R
+import com.bluefoxconsultant.sms.ui.asString
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -43,9 +49,12 @@ fun MailRow(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     selected: Boolean = false,
+    /** La couleur de la boîte d'arrivée (#25734), peinte en liseré à gauche. */
+    couleurBoite: Color? = null,
 ) {
     val context = LocalContext.current
     val unread = message.unreadCount > 0 || message.isUnread
+    val correspondant = message.correspondent.asString()
 
     Row(
         modifier = Modifier
@@ -53,6 +62,13 @@ fun MailRow(
             .background(
                 if (selected) BrandAccent.copy(alpha = 0.14f) else Color.Transparent,
             )
+            // Dessiné derrière la ligne plutôt que posé dedans : la ligne garde
+            // sa largeur, avec ou sans liseré, comme la pastille de sélection.
+            .drawBehind {
+                if (couleurBoite != null) {
+                    drawRect(couleurBoite, size = Size(4.dp.toPx(), size.height))
+                }
+            }
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.Top,
@@ -67,19 +83,19 @@ fun MailRow(
             ) {
                 Icon(
                     Icons.Filled.Check,
-                    contentDescription = "Sélectionné",
+                    contentDescription = stringResource(R.string.common_selected),
                     tint = Color.White,
                     modifier = Modifier.size(22.dp),
                 )
             }
         } else {
-            Avatar(message.correspondent)
+            Avatar(correspondant)
         }
         Spacer(Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = message.correspondent,
+                    text = correspondant,
                     fontWeight = if (unread) FontWeight.Bold else FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -107,7 +123,7 @@ fun MailRow(
             }
             Spacer(Modifier.size(2.dp))
             Text(
-                text = message.displaySubject,
+                text = message.displaySubject.asString(),
                 fontWeight = if (unread) FontWeight.SemiBold else FontWeight.Normal,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -128,7 +144,7 @@ fun MailRow(
                     Spacer(Modifier.width(6.dp))
                     Icon(
                         Icons.Filled.AttachFile,
-                        contentDescription = "Pièce jointe",
+                        contentDescription = stringResource(R.string.mail_row_attachment),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(14.dp),
                     )
@@ -137,7 +153,7 @@ fun MailRow(
                     Spacer(Modifier.width(6.dp))
                     Icon(
                         Icons.Filled.Schedule,
-                        contentDescription = "Reporté",
+                        contentDescription = stringResource(R.string.mail_snoozed),
                         tint = BrandAccent,
                         modifier = Modifier.size(14.dp),
                     )
@@ -150,11 +166,31 @@ fun MailRow(
                 // La pastille mène AU dossier : c'est la première chose qu'on
                 // essaie en la voyant, et elle ne faisait rien.
                 RecordChip(record.name) {
-                    OdooLinks.openRecord(context, record.model, record.id)
+                    // Une tâche s'ouvre DANS l'onglet Tâches, où l'on peut agir
+                    // dessus ; tout autre dossier va au navigateur, comme avant.
+                    // Le repli reste le navigateur quand l'agenda n'est pas
+                    // offert : un geste qui ne fait rien se lit comme une panne.
+                    if (!ouvrirDansLesTaches(record.model, record.id)) {
+                        OdooLinks.openRecord(context, record.model, record.id)
+                    }
                 }
             }
         }
     }
+}
+
+/**
+ * Vrai si le dossier est une tâche ET que l'onglet Tâches existe : la demande
+ * est alors déposée pour l'écran des tâches, et l'accueil bascule d'onglet.
+ */
+private fun ouvrirDansLesTaches(model: String, id: Int): Boolean {
+    if (model != "project.task" || id <= 0) return false
+    // Une instance en api 2 n'a pas `/task?id=` : le navigateur reste la
+    // bonne porte, plutôt qu'un onglet qui s'ouvre sur « ne s'ouvre pas d'ici ».
+    val ping = Graph.agendaStore.ping.value
+    if (!ping.enabled || ping.api < 3) return false
+    Graph.agendaStore.demanderTache(id)
+    return true
 }
 
 @Composable

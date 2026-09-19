@@ -22,6 +22,8 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import androidx.compose.ui.res.stringResource
+import com.bluefoxconsultant.sms.R
 
 /**
  * Ce qui relit un écran pendant qu'on le regarde.
@@ -111,12 +113,12 @@ fun BanniereFraicheur(lu: Long, verifieA: Long, zone: ZoneId, onRelire: () -> Un
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                "Dernière lecture à " + heureDeLecture(lu, zone) + ".",
+                stringResource(R.string.freshness_last_read, heureDeLecture(lu, zone)),
                 Modifier.weight(1f),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
             )
-            TextButton(onClick = onRelire) { Text("Relire") }
+            TextButton(onClick = onRelire) { Text(stringResource(R.string.freshness_reload)) }
         }
     }
 }

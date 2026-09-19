@@ -8,6 +8,9 @@ import com.bluefoxconsultant.sms.data.MailAttachment
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import com.bluefoxconsultant.sms.R
+import com.bluefoxconsultant.sms.ui.UiText
+import com.bluefoxconsultant.sms.ui.uiText
 
 /**
  * Downloads an attachment and hands it to whatever app can open it.
@@ -25,7 +28,8 @@ object AttachmentOpener {
     /** Result of an open attempt, so the caller can say something useful. */
     sealed interface Result {
         data object Ok : Result
-        data class Failed(val message: String) : Result
+        /** Rédigé par l'appelant, dans la langue du téléphone. */
+        data class Failed(val message: UiText) : Result
     }
 
     suspend fun open(context: Context, emailId: Int, attachment: MailAttachment): Result {
@@ -40,13 +44,13 @@ object AttachmentOpener {
                 }
             }
         } catch (e: Exception) {
-            return Result.Failed("Téléchargement impossible.")
+            return Result.Failed(uiText(R.string.mail_attachment_download_failed))
         }
 
         val uri = try {
             FileProvider.getUriForFile(context, "${context.packageName}.attachments", file)
         } catch (e: Exception) {
-            return Result.Failed("Fichier inaccessible.")
+            return Result.Failed(uiText(R.string.mail_attachment_inaccessible))
         }
 
         val intent = Intent(Intent.ACTION_VIEW).apply {
@@ -58,7 +62,7 @@ object AttachmentOpener {
             Result.Ok
         } catch (e: Exception) {
             // No installed app claims this type — common for .eml or odd MIME.
-            Result.Failed("Aucune application pour ouvrir « ${attachment.name} ».")
+            Result.Failed(uiText(R.string.mail_attachment_no_app, attachment.name))
         }
     }
 

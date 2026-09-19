@@ -1,5 +1,8 @@
 package com.bluefoxconsultant.sms.data
 
+import androidx.annotation.StringRes
+import com.bluefoxconsultant.sms.R
+
 /**
  * Le thème que porte l'application.
  *
@@ -24,11 +27,12 @@ enum class ThemeMode(val stored: String) {
         SYSTEM -> DARK
     }
 
-    val libelle: String
+    @get:StringRes
+    val libelleRes: Int
         get() = when (this) {
-            SYSTEM -> "Système"
-            LIGHT -> "Clair"
-            DARK -> "Sombre"
+            SYSTEM -> R.string.theme_system
+            LIGHT -> R.string.theme_light
+            DARK -> R.string.theme_dark
         }
 
     companion object {

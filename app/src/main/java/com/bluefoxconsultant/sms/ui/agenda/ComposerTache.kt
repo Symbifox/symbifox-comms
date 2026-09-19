@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -33,6 +34,8 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
+import androidx.compose.ui.res.stringResource
+import com.bluefoxconsultant.sms.R
 
 /**
  * Poser une tâche depuis le téléphone.
@@ -55,33 +58,40 @@ fun ComposerTache(
     var titre by remember { mutableStateOf("") }
     var projet by remember { mutableStateOf<Int?>(null) }
     var jours by remember { mutableStateOf<Long?>(null) }
+    // Une échéance précise, choisie dans les sélecteurs d'Android ; elle
+    // l'emporte sur les raccourcis en jours dès qu'elle est posée.
+    var precise by remember { mutableStateOf<java.time.LocalDateTime?>(null) }
+    var choixDate by remember { mutableStateOf(false) }
+    var dateChoisie by remember { mutableStateOf<LocalDate?>(null) }
     var priorite by remember { mutableStateOf("0") }
     var etiquettes by remember { mutableStateOf(setOf<Int>()) }
     var filtre by remember { mutableStateOf("") }
+    val jourCourt = formateurDate("EEEdMMM")
 
     ModalBottomSheet(onDismissRequest = onFermer, sheetState = sheetState) {
         Column(
             Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
+                .imePadding()
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("Nouvelle tâche", style = MaterialTheme.typography.titleLarge)
+            Text(stringResource(R.string.tasks_new_task), style = MaterialTheme.typography.titleLarge)
 
             OutlinedTextField(
                 value = titre,
                 onValueChange = { titre = it },
-                label = { Text("Titre") },
+                label = { Text(stringResource(R.string.common_title)) },
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            Text("Projet", style = MaterialTheme.typography.labelLarge)
+            Text(stringResource(R.string.task_project), style = MaterialTheme.typography.labelLarge)
             OutlinedTextField(
                 value = filtre,
                 onValueChange = { filtre = it },
-                label = { Text("Filtrer les projets") },
+                label = { Text(stringResource(R.string.task_filter_projects)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -101,31 +111,43 @@ fun ComposerTache(
             }
             if (visibles.isEmpty()) {
                 Text(
-                    "Aucun projet ne correspond.",
+                    stringResource(R.string.task_no_matching_project),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
-            Text("Échéance", style = MaterialTheme.typography.labelLarge)
+            Text(stringResource(R.string.task_deadline), style = MaterialTheme.typography.labelLarge)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf<Pair<String, Long?>>(
-                    "Aucune" to null,
-                    "Aujourd'hui" to 0L,
-                    "Demain" to 1L,
-                    "Dans 3 j" to 3L,
-                    "Dans 1 sem." to 7L,
+                listOf<Pair<Int, Long?>>(
+                    R.string.task_deadline_none to null,
+                    R.string.agenda_today to 0L,
+                    R.string.task_deadline_tomorrow to 1L,
+                    R.string.task_deadline_in_3_days to 3L,
+                    R.string.task_deadline_in_1_week to 7L,
                 ).forEach { (libelle, valeur) ->
                     FilterChip(
-                        selected = jours == valeur,
-                        onClick = { jours = valeur },
-                        label = { Text(libelle) },
+                        selected = precise == null && jours == valeur,
+                        onClick = { jours = valeur; precise = null },
+                        label = { Text(stringResource(libelle)) },
                     )
                 }
+                FilterChip(
+                    selected = precise != null,
+                    onClick = { choixDate = true },
+                    label = {
+                        Text(
+                            // La date dans la langue du téléphone, l'heure en chiffres.
+                            precise?.let {
+                                jourCourt.format(it) + " " + HEURE.format(it)
+                            } ?: stringResource(R.string.task_deadline_pick),
+                        )
+                    },
+                )
             }
 
             if (options.priorities.isNotEmpty()) {
-                Text("Priorité", style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.task_priority), style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     options.priorities.forEach { p ->
                         FilterChip(
@@ -138,7 +160,7 @@ fun ComposerTache(
             }
 
             if (options.tags.isNotEmpty()) {
-                Text("Étiquettes", style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.task_tags), style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     options.tags.take(20).forEach { tag ->
                         FilterChip(
@@ -164,7 +186,7 @@ fun ComposerTache(
                 Button(
                     enabled = titre.isNotBlank() && projet != null && !busy,
                     onClick = {
-                        val quand = jours?.let {
+                        val quand = precise?.atZone(zone)?.toInstant() ?: jours?.let {
                             LocalDate.now(zone).plusDays(it)
                                 .atTime(LocalTime.of(17, 0)).atZone(zone).toInstant()
                         }
@@ -176,10 +198,25 @@ fun ComposerTache(
                             etiquettes.toList(),
                         )
                     },
-                ) { Text("Créer") }
-                TextButton(onClick = onFermer) { Text("Annuler") }
+                ) { Text(stringResource(R.string.common_create)) }
+                TextButton(onClick = onFermer) { Text(stringResource(R.string.common_cancel)) }
                 if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
             }
         }
+    }
+
+    if (choixDate) {
+        DialogueDate(
+            initiale = precise?.toLocalDate() ?: LocalDate.now(zone),
+            onChoisir = { dateChoisie = it },
+            onFermer = { choixDate = false },
+        )
+    }
+    dateChoisie?.let { jour ->
+        DialogueHeure(
+            initiale = precise?.toLocalTime() ?: LocalTime.of(17, 0),
+            onChoisir = { heure -> precise = jour.atTime(heure) },
+            onFermer = { dateChoisie = null },
+        )
     }
 }

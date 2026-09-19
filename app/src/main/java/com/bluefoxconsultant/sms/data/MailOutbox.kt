@@ -2,6 +2,7 @@ package com.bluefoxconsultant.sms.data
 
 import android.content.Context
 import com.bluefoxconsultant.sms.network.ApiException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.SerialName
@@ -11,10 +12,23 @@ import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.IOException
 import java.util.UUID
+import com.bluefoxconsultant.sms.R
+import com.bluefoxconsultant.sms.ui.UiText
+import com.bluefoxconsultant.sms.ui.uiText
 
 /** True when a failure means "couldn't reach the server", not "server said no". */
 fun Throwable.isOffline(): Boolean = this is IOException ||
     (this is ApiException && code == 0)
+
+/**
+ * Le serveur a répondu, mais pas LUI : un 502/503/504 vient du mandataire
+ * pendant qu'Odoo redémarre, un 429 dit « pas maintenant ». Lus comme un
+ * refus, ils faisaient abandonner une réponse écrite hors ligne, dont le
+ * brouillon était déjà effacé. On garde la file et on réessaie plus tard.
+ * Audit du 2026-09-08.
+ */
+fun Throwable.isTransient(): Boolean =
+    this is ApiException && code in setOf(429, 502, 503, 504)
 
 /** One action taken while the server was unreachable, waiting to be replayed. */
 @Serializable
@@ -36,17 +50,47 @@ data class PendingAction(
     val subject: String = "",
     val to: List<String>? = null,
     val cc: List<String>? = null,
+    // ---- #25764 : tout ce que le composeur tenait, pas seulement le texte ----
+    val bcc: List<String>? = null,
+    /**
+     * Les pièces DÉJÀ téléversées, avec leur nom : l'envoi n'a besoin que de
+     * l'identifiant, mais un envoi refusé ou annulé redevient un brouillon, et
+     * le brouillon doit les réafficher.
+     */
+    val attachments: List<StagedUpload> = emptyList(),
+    /** [body] est-il déjà du HTML (mise en forme convertie au moment de décider) ? */
+    @SerialName("body_is_html") val bodyIsHtml: Boolean = false,
+    /** Le texte tel qu'il s'écrivait, balisage léger compris : pour le brouillon. */
+    @SerialName("body_source") val bodySource: String = "",
+    @SerialName("identity_id") val identityId: Int? = null,
+    @SerialName("res_model") val resModel: String? = null,
+    @SerialName("res_id") val resId: Int? = null,
+    @SerialName("record_name") val recordName: String = "",
+    /**
+     * Pas avant cette heure : le délai pendant lequel « Annuler » reste
+     * possible. La file ne touche pas à une action qui n'est pas due.
+     */
+    @SerialName("not_before_ms") val notBeforeMs: Long = 0,
+    /** Un envoi PROGRAMMÉ au serveur, pas un délai de l'appareil. */
+    @SerialName("scheduled_ms") val scheduledMs: Long? = null,
+    /** Les destinataires d'une réponse avaient-ils été préparés et retouchés ? */
+    @SerialName("recipients_prepared") val recipientsPrepared: Boolean = false,
 ) {
     val isSend: Boolean get() = kind == KIND_REPLY || kind == KIND_COMPOSE
 
+    fun estDue(maintenant: Long): Boolean = notBeforeMs <= maintenant
+
     /** What to show the user while it waits. */
-    val label: String get() = when (kind) {
-        KIND_REPLY -> "Réponse en attente d'envoi"
-        KIND_COMPOSE -> "Courriel en attente d'envoi"
-        KIND_HANDLE -> if (handled) "Archivage en attente" else "Restauration en attente"
-        KIND_SNOOZE -> "Report en attente"
-        else -> "Action en attente"
-    }
+    val label: UiText get() = uiText(
+        when (kind) {
+            KIND_REPLY -> R.string.mail_outbox_reply_pending
+            KIND_COMPOSE -> R.string.mail_outbox_compose_pending
+            KIND_HANDLE ->
+                if (handled) R.string.mail_outbox_archive_pending else R.string.mail_outbox_restore_pending
+            KIND_SNOOZE -> R.string.mail_outbox_snooze_pending
+            else -> R.string.mail_outbox_action_pending
+        },
+    )
 
     companion object {
         const val KIND_MARK_READ = "mark_read"
@@ -89,8 +133,11 @@ class MailOutbox(private val file: File) {
         explicitNulls = false
     }
 
-    /** Failures worth telling the user about, drained by the UI. */
-    private val _failures = mutableListOf<String>()
+    /**
+     * Failures worth telling the user about, drained by the UI. Des [UiText] :
+     * la file vit hors de tout écran, la phrase se rédige à l'affichage.
+     */
+    private val _failures = mutableListOf<UiText>()
 
     @Synchronized
     fun peek(): List<PendingAction> = runCatching {
@@ -112,13 +159,20 @@ class MailOutbox(private val file: File) {
     fun enqueue(action: PendingAction) = write(peek() + action)
 
     @Synchronized
-    fun drainFailures(): List<String> {
+    fun drainFailures(): List<UiText> {
         val out = _failures.toList()
         _failures.clear()
         return out
     }
 
     val size: Int get() = peek().size
+
+    /**
+     * Ce que le bandeau hors ligne doit compter : pas un envoi dont le délai
+     * d'annulation court encore, qui a déjà son propre bandeau (#25764).
+     */
+    fun enAttenteVisible(maintenant: Long = System.currentTimeMillis()): Int =
+        peek().count { it.estDue(maintenant) }
 
     /** Pending sends, so the composer/thread can show "waiting to send". */
     fun pendingSends(): List<PendingAction> = peek().filter { it.isSend }
@@ -136,24 +190,65 @@ class MailOutbox(private val file: File) {
      * failure rules can be exercised without a server — the part most likely
      * to be subtly wrong is the bookkeeping, not the HTTP.
      */
-    suspend fun flush(send: suspend (PendingAction) -> Unit): Int {
+    suspend fun flush(
+        send: suspend (PendingAction) -> Unit,
+    ): Int = flush(send, refus = { _, _ -> false })
+
+    /**
+     * [refus] reçoit une action que le serveur a refusée, avec l'erreur. Rend
+     * vrai quand il en a fait quelque chose — un envoi refusé redevient un
+     * brouillon (#25764), et le message de la file le dit alors autrement que
+     * « abandonné ».
+     *
+     * [maintenant] décide de ce qui est dû : une action dont le délai
+     * d'annulation court encore reste en file, et celles d'après passent.
+     */
+    suspend fun flush(
+        send: suspend (PendingAction) -> Unit,
+        maintenant: () -> Long = System::currentTimeMillis,
+        /**
+         * Les actions à ne PAS envoyer, relu à chaque tour : « Annuler » touché
+         * pendant qu'une vidange lente tient le verrou marque l'envoi ici, et
+         * la boucle ne le prend plus même si son délai échoit entretemps.
+         */
+        ignorer: (PendingAction) -> Boolean = { false },
+        refus: (PendingAction, Throwable) -> Boolean,
+    ): Int {
         mutex.withLock {
             var sent = 0
-            var queue = peek()
-            while (queue.isNotEmpty()) {
-                val action = queue.first()
+            while (true) {
+                // Relue à chaque tour, et retirée PAR IDENTITÉ : une copie
+                // locale réécrite après l'envoi effaçait ce qu'un `enqueue`
+                // avait ajouté pendant qu'on attendait le serveur.
+                val action = peek().firstOrNull { it.estDue(maintenant()) && !ignorer(it) } ?: break
                 try {
                     send(action)
+                } catch (e: CancellationException) {
+                    throw e   // annulée, pas refusée : la file reste intacte
                 } catch (e: Throwable) {
-                    if (e.isOffline()) return sent   // still down; keep the queue
+                    if (e.isOffline() || e.isTransient()) return sent   // keep the queue
                     // The server answered and refused. Drop it, say why.
-                    synchronized(this) { _failures.add("${action.label} — abandonnée.") }
+                    if (!refus(action, e)) {
+                        synchronized(this) { _failures.add(uiText(R.string.mail_outbox_dropped, action.label)) }
+                    }
                 }
-                queue = queue.drop(1)
-                write(queue)
+                write(peek().filterNot { it.token == action.token })
                 sent += 1
             }
             return sent
         }
+    }
+
+    /**
+     * Retirer une action de la file, si elle n'est pas partie.
+     *
+     * Sous le même verrou que [flush] : « Annuler » touché pendant que l'envoi
+     * est en vol attend son issue, et rend `null` si le message est parti. Rend
+     * l'action retirée sinon.
+     */
+    suspend fun retirer(token: String): PendingAction? = mutex.withLock {
+        val action = peek().firstOrNull { it.token == token } ?: return@withLock null
+        write(peek().filterNot { it.token == token })
+        action
     }
 }

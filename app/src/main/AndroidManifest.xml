@@ -36,11 +36,17 @@
         <intent>
             <action android:name="org.unifiedpush.android.distributor.REGISTER"/>
         </intent>
+        <!-- ⚠️ Sans cette déclaration, Android 11 et plus rend `null` pour
+             Symbifox Compte même quand il est installé, et l'offre « votre
+             compte Symbifox » disparaît en silence de l'écran de connexion
+             (BF #25765). -->
+        <package android:name="com.bluefoxconsultant.compte"/>
     </queries>
 
     <application
         android:name=".BfSmsApp"
         android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
@@ -49,10 +55,21 @@
         android:usesCleartextTraffic="false"
         tools:targetApi="34">
 
+        <!-- ⚠️ `adjustResize`, posé explicitement. Sans lui le système choisit
+             entre redimensionner et faire glisser la fenêtre selon qu'il croit
+             y voir une vue défilante — et une fenêtre Compose n'en a aucune à
+             ses yeux, donc il glissait, en calant le glissement sur un
+             rectangle qui n'est pas toujours le curseur : le clavier passait
+             par-dessus ce qu'on écrivait. Redimensionnée, la fenêtre livre
+             l'encoche du clavier aux `windowInsets`, la colonne de l'accueil
+             la consomme comme les autres, et les feuilles de saisie la
+             prennent par `imePadding`. -->
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
+            android:taskAffinity=""
+            android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.BfSms">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
@@ -130,17 +147,20 @@
                 android:resource="@xml/file_paths"/>
         </provider>
 
-        <!-- UnifiedPush: receives endpoint + push messages from the distributor. -->
-        <receiver
-            android:name=".push.PushReceiver"
-            android:exported="true">
+        <!-- UnifiedPush : l'endpoint et les messages, DÉJÀ déchiffrés.
+             Connecteur 3.x : le récepteur exporté que les distributeurs
+             appellent est déclaré par le connecteur lui-même, qui déchiffre
+             puis lie ce service. Non exporté : seule l'app s'y lie.
+             ⚠️ Ne pas remettre ici de récepteur `connector.MESSAGE` : celui du
+             connecteur (priorité -500) se tait dès qu'il en trouve un autre,
+             et le push arriverait sans être déchiffré. -->
+        <service
+            android:name=".push.BfPushService"
+            android:exported="false">
             <intent-filter>
-                <action android:name="org.unifiedpush.android.connector.MESSAGE"/>
-                <action android:name="org.unifiedpush.android.connector.NEW_ENDPOINT"/>
-                <action android:name="org.unifiedpush.android.connector.REGISTRATION_FAILED"/>
-                <action android:name="org.unifiedpush.android.connector.UNREGISTERED"/>
+                <action android:name="org.unifiedpush.android.connector.PUSH_EVENT"/>
             </intent-filter>
-        </receiver>
+        </service>
 
         <!-- Notification quick-reply (RemoteInput → POST /send). -->
         <receiver

@@ -37,6 +37,8 @@ import com.bluefoxconsultant.sms.data.Graph
 import com.bluefoxconsultant.sms.data.MailConfig
 import com.bluefoxconsultant.sms.data.RecordRef
 import kotlinx.coroutines.delay
+import androidx.compose.ui.res.stringResource
+import com.bluefoxconsultant.sms.R
 
 /**
  * Picks the Odoo record an email should be filed into.
@@ -49,7 +51,14 @@ import kotlinx.coroutines.delay
 fun RoutePickerDialog(
     config: MailConfig,
     onDismiss: () -> Unit,
-    onPick: (model: String, recordId: Int) -> Unit,
+    onPick: (model: String, recordId: Int) -> Unit = { _, _ -> },
+    /** Le titre ; « Router vers un dossier » par défaut. */
+    title: String? = null,
+    /**
+     * La fiche entière, nom compris — ce qu'il faut au composeur pour
+     * afficher où un message neuf sera classé (#25764).
+     */
+    onPickRecord: ((RecordRef) -> Unit)? = null,
 ) {
     val models = config.routableModels
     if (models.isEmpty()) {
@@ -82,8 +91,8 @@ fun RoutePickerDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
-        title = { Text("Router vers un dossier") },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
+        title = { Text(title ?: stringResource(R.string.mail_route_to_folder)) },
         text = {
             Column(Modifier.fillMaxWidth()) {
                 Row(Modifier.fillMaxWidth()) {
@@ -100,7 +109,7 @@ fun RoutePickerDialog(
                 OutlinedTextField(
                     value = term,
                     onValueChange = { term = it },
-                    label = { Text("Rechercher") },
+                    label = { Text(stringResource(R.string.common_search)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -109,15 +118,15 @@ fun RoutePickerDialog(
                     searching -> Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                         Spacer(Modifier.width(8.dp))
-                        Text("Recherche…", fontSize = 13.sp)
+                        Text(stringResource(R.string.mail_route_searching), fontSize = 13.sp)
                     }
                     term.trim().length < 2 -> Text(
-                        "Tapez au moins deux caractères.",
+                        stringResource(R.string.mail_route_type_two_chars),
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     results.isEmpty() -> Text(
-                        "Aucun résultat.",
+                        stringResource(R.string.mail_route_no_results),
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -130,7 +139,10 @@ fun RoutePickerDialog(
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { onPick(model, record.id) }
+                                    .clickable {
+                                        onPickRecord?.invoke(record.copy(model = model))
+                                            ?: onPick(model, record.id)
+                                    }
                                     .padding(vertical = 12.dp),
                             )
                             HorizontalDivider(

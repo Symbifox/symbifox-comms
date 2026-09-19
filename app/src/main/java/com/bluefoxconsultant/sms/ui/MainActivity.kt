@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -33,6 +34,7 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Dialpad
 import androidx.compose.material.icons.filled.MailOutline
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -48,6 +50,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -73,6 +76,7 @@ import com.bluefoxconsultant.sms.data.Service
 import com.bluefoxconsultant.sms.data.ShareIntake
 import com.bluefoxconsultant.sms.data.SharedContent
 import com.bluefoxconsultant.sms.push.Notifier
+import com.bluefoxconsultant.sms.push.PushRegistrar
 import com.bluefoxconsultant.sms.sip.CallGap
 import com.bluefoxconsultant.sms.sip.SipEngine
 import com.bluefoxconsultant.sms.sip.cheminReglage
@@ -87,6 +91,7 @@ import com.bluefoxconsultant.sms.ui.genfox.GenfoxScreen
 import com.bluefoxconsultant.sms.ui.instance.InstanceScreen
 import com.bluefoxconsultant.sms.ui.login.LoginScreen
 import com.bluefoxconsultant.sms.ui.mail.MailComposeScreen
+import com.bluefoxconsultant.sms.ui.mail.BandeauEnvois
 import com.bluefoxconsultant.sms.ui.mail.MailListScreen
 import com.bluefoxconsultant.sms.ui.mail.MailListViewModel
 import com.bluefoxconsultant.sms.ui.mail.MailThreadScreen
@@ -97,10 +102,21 @@ import com.bluefoxconsultant.sms.ui.theme.BfSmsTheme
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
 import com.bluefoxconsultant.sms.ui.threads.ArchivedScreen
 import com.bluefoxconsultant.sms.ui.threads.ThreadsScreen
-import java.net.URLDecoder
-import java.net.URLEncoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.bluefoxconsultant.sms.data.nonLusDesFils
+import com.bluefoxconsultant.sms.data.pastilleCourriel
+import com.bluefoxconsultant.sms.ui.agenda.pastilleTaches
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.DelicateCoroutinesApi
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import androidx.compose.ui.res.stringResource
+import com.bluefoxconsultant.sms.R
 
 class MainActivity : ComponentActivity() {
 
@@ -153,9 +169,27 @@ class MainActivity : ComponentActivity() {
         // Le drapeau n'est examiné que pour le partage : les autres chemins
         // (notification, tel:, assistance) gardent le comportement qu'ils ont.
         val fromHistory = intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0
-        ShareIntake.from(intent)?.takeIf { !fromHistory }?.let {
-            ShareIntake.offer(it)
-            pendingShare.value = it
+        ShareIntake.from(intent, this)?.takeIf { !fromHistory }?.let {
+            // Écartés par le filtre (fichier local, fichier de Comms lui-même) :
+            // le dire tout de suite, sinon la pièce manquante se découvre
+            // une fois le courriel parti.
+            // ⚠️ Court : depuis Android 12 un toast est coupé à deux lignes, et
+            // la première version finissait en « son… » sur un Pixel 5.
+            if (it.ecartes > 0) {
+                Toast.makeText(
+                    this,
+                    if (it.ecartes == 1) {
+                        getString(R.string.main_share_file_skipped)
+                    } else {
+                        resources.getQuantityString(R.plurals.main_share_files_skipped, it.ecartes, it.ecartes)
+                    },
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+            if (!it.isEmpty) {
+                ShareIntake.offer(it)
+                pendingShare.value = it
+            }
             return
         }
         val data = intent.data
@@ -273,6 +307,36 @@ private fun AppRoot(
             SettingsScreen(onBack = { nav.popBackStack() })
         }
     }
+
+    // Plusieurs distributeurs, aucun par défaut : l'inscription qui suit une
+    // connexion le demande, et c'est ici, au-dessus de tout écran, qu'on répond.
+    val context = LocalContext.current
+    val aChoisir by PushRegistrar.aChoisir.collectAsState()
+    aChoisir?.let { candidats ->
+        DialogueDistributeur(
+            candidats = candidats,
+            courant = null,
+            onChoisir = { PushRegistrar.utiliser(context, it) },
+            onFermer = { PushRegistrar.renoncer() },
+        )
+    }
+
+    // 🔴 Le Keystore a refusé le magasin chiffré : les sessions ne tiennent que
+    // le temps de ce processus. Le dire UNE fois, en clair, plutôt que de
+    // laisser la personne découvrir au prochain lancement qu'elle est
+    // déconnectée sans savoir pourquoi. `rememberSaveable` : une rotation ne
+    // doit ni le taire ni le reposer.
+    var avisDegrade by rememberSaveable { mutableStateOf(tokenStore.prendreAvisDegrade()) }
+    if (avisDegrade) {
+        AlertDialog(
+            onDismissRequest = { avisDegrade = false },
+            title = { Text(stringResource(R.string.main_secure_storage_title)) },
+            text = { Text(stringResource(R.string.main_secure_storage_text)) },
+            confirmButton = {
+                TextButton(onClick = { avisDegrade = false }) { Text(stringResource(R.string.main_got_it)) }
+            },
+        )
+    }
 }
 
 /**
@@ -326,6 +390,8 @@ private fun HomeShell(
     // login of its own, so it must not join the enum that drives the login
     // screens. It earns a tab only once the server says it is configured.
     val genfox by Graph.genfoxStore.config.collectAsStateWithLifecycle()
+    // La conversation qu'une notification de Gen demande d'ouvrir.
+    var genfoxOuvrir by remember { mutableStateOf<Int?>(null) }
     val phone by Graph.phoneStore.config.collectAsStateWithLifecycle()
     // Même raison que GenFox : l'agenda est une capacité de la session en
     // place. Deux onglets en dépendent, l'agenda et les échéances, et ils
@@ -334,6 +400,9 @@ private fun HomeShell(
     val agenda by Graph.agendaStore.ping.collectAsStateWithLifecycle()
     LaunchedEffect(tokens.isNotEmpty()) {
         if (tokens.isNotEmpty()) {
+            // Les envois qu'un processus mort a laissés pendant leur délai
+            // d'annulation : bandeau et minuterie reviennent, ou ils partent.
+            runCatching { Graph.envois.reprendre() }
             Graph.genfoxStore.ensureLoaded()
             // Asked here rather than only from a conversation's call button, so
             // the keypad can earn its own tab.
@@ -374,11 +443,14 @@ private fun HomeShell(
         nav.navigate("${Tabs.CONVERSATION}/$id")
         pendingThread.value = null
     }
-    // Tapping the assistant's notification lands on its tab. The screen picks
-    // the latest conversation itself, which is the one that just answered.
+    // Tapping the assistant's notification lands on its tab, ON the
+    // conversation that answered. Plusieurs conversations travaillent en même
+    // temps depuis #25734 : « la plus récente » n'est plus forcément celle-là.
+    // L'écran consomme la demande une fois la conversation ouverte.
     LaunchedEffect(pendingGenfox.value, genfox.enabled) {
-        if (pendingGenfox.value == null) return@LaunchedEffect
+        val session = pendingGenfox.value ?: return@LaunchedEffect
         if (!genfox.enabled) return@LaunchedEffect
+        genfoxOuvrir = session
         nav.navigate(Tabs.GENFOX) { launchSingleTop = true }
         pendingGenfox.value = null
     }
@@ -416,18 +488,68 @@ private fun HomeShell(
         }
         pendingShare.value = null
     }
+    // Un courriel classé sur une tâche demande l'onglet Tâches. La demande
+    // n'est PAS consommée ici : c'est l'écran des tâches qui le fait, une fois
+    // la fiche ouverte — sinon il arriverait après et ne trouverait plus rien.
+    val demandeTache by Graph.agendaStore.demandeTache.collectAsStateWithLifecycle()
+    LaunchedEffect(demandeTache, agenda.enabled) {
+        if (demandeTache == null || !agenda.enabled) return@LaunchedEffect
+        nav.navigate(Tabs.TASKS) {
+            popUpTo(nav.graph.startDestinationId) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+    // Le volet Courriel d'un appariement revient quand la personne a touché
+    // « Autoriser » sur la page de consentement du serveur — des secondes plus
+    // tard, parfois sur un autre onglet. Seul l'onglet Courriel sait le
+    // recevoir ici (`ConnectServicePane`) : on y va, plutôt que de laisser le
+    // lien attendre qu'on ouvre l'onglet par hasard.
+    LaunchedEffect(pendingAuthUri.value, tabs) {
+        if (pendingAuthUri.value == null) return@LaunchedEffect
+        if (tokenStore.pendingService != Service.MAIL) return@LaunchedEffect
+        if (tokenStore.tokenFor(Service.MAIL) != null || Service.MAIL !in tabs) return@LaunchedEffect
+        nav.navigate(Tabs.MAIL) {
+            popUpTo(nav.graph.startDestinationId) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
     LaunchedEffect(pendingMailThread.value, tabs) {
         val key = pendingMailThread.value ?: return@LaunchedEffect
         if (Service.MAIL !in tabs) return@LaunchedEffect
-        if (key.isBlank()) {
-            nav.navigate(Tabs.MAIL) { launchSingleTop = true }
-        } else {
-            nav.navigate("${Tabs.MAIL_THREAD}/${URLEncoder.encode(key, "UTF-8")}")
+        // 🔴 L'onglet D'ABORD, puis le fil. Le fil emprunte le modèle de vue de
+        // l'onglet (`getBackStackEntry(Tabs.MAIL)`), et l'onglet n'est sur la
+        // pile que si on y est passé : ouvert depuis une notification, app
+        // fermée ou onglet Messages devant, il n'y était pas et l'app
+        // plantait. Même détour qu'`openMailCompose`. Audit du 2026-09-08.
+        nav.navigate(Tabs.MAIL) {
+            popUpTo(nav.graph.startDestinationId) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+        if (key.isNotBlank()) {
+            nav.navigate("${Tabs.MAIL_THREAD}/${argumentDeRoute(key)}")
         }
         pendingMailThread.value = null
     }
 
     val startTab = if (Service.SMS in tabs) Tabs.SMS else Tabs.MAIL
+
+    // Les pastilles de la barre du bas se relisent à la minute pendant qu'on
+    // regarde N'IMPORTE QUEL onglet. Les écrans déposent déjà leurs nombres
+    // en lisant leurs listes ; mais la pastille du courriel ne servirait à rien
+    // si elle ne bougeait que lorsqu'on est déjà dans le courriel. Trois
+    // requêtes légères, en silence : un échec garde la dernière valeur.
+    val badges by Graph.badges.badges.collectAsStateWithLifecycle()
+    RelirePendantQuOnRegarde {
+        if (tokens.isEmpty()) return@RelirePendantQuOnRegarde
+        relireLesPastilles(
+            sms = tokens.containsKey(Service.SMS),
+            mail = tokens.containsKey(Service.MAIL),
+            taches = agenda.enabled,
+        )
+    }
 
     // ⚠️ Android 15 impose le bord à bord aux applications qui visent l'API 35
     // ou plus : les barres système cessent de réserver leur place, et
@@ -538,6 +660,8 @@ private fun HomeShell(
                     GenfoxScreen(
                         assist = pendingAssist.value,
                         onAssistConsumed = { pendingAssist.value = false },
+                        openSession = genfoxOuvrir,
+                        onOpenSessionConsumed = { genfoxOuvrir = null },
                     )
                 }
                 composable(Tabs.AGENDA) {
@@ -587,7 +711,7 @@ private fun HomeShell(
                     val vm: MailListViewModel = viewModel(viewModelStoreOwner = it)
                     MailListScreen(
                         onOpenThread = { key ->
-                            nav.navigate("${Tabs.MAIL_THREAD}/${URLEncoder.encode(key, "UTF-8")}")
+                            nav.navigate("${Tabs.MAIL_THREAD}/${argumentDeRoute(key)}")
                         },
                         onCompose = { nav.navigate("${Tabs.MAIL_COMPOSE}/new/0") },
                         // Reprendre un brouillon rouvre le composeur DANS SON MODE :
@@ -596,8 +720,14 @@ private fun HomeShell(
                         onOpenDraft = { draft ->
                             nav.navigate(
                                 "${Tabs.MAIL_COMPOSE}/${draft.mode}/${draft.emailId}" +
-                                    "?draft=${URLEncoder.encode(draft.id, "UTF-8")}",
+                                    "?draft=${argumentDeRoute(draft.id)}",
                             )
+                        },
+                        // Un brouillon du POSTE n'a ni mode ni courriel
+                        // d'origine côté app : il est identifié par le seul
+                        // `srv`, et le composeur va chercher le reste.
+                        onOpenServerDraft = { draft ->
+                            nav.navigate("${Tabs.MAIL_COMPOSE}/new/0?srv=${draft.id}")
                         },
                         onSettings = { rootNav.navigate(Routes.SETTINGS) },
                         vm = vm,
@@ -607,9 +737,15 @@ private fun HomeShell(
                     route = "${Tabs.MAIL_THREAD}/{threadKey}",
                     arguments = listOf(navArgument("threadKey") { type = NavType.StringType }),
                 ) { entry ->
-                    val encoded = entry.arguments?.getString("threadKey").orEmpty()
-                    val key = runCatching { URLDecoder.decode(encoded, "UTF-8") }.getOrDefault(encoded)
-                    val listEntry = remember(entry) { nav.getBackStackEntry(Tabs.MAIL) }
+                    // Navigation a déjà décodé l'argument : ne pas le redécoder,
+                    // un « + » deviendrait une espace. Voir `argumentDeRoute`.
+                    val key = entry.arguments?.getString("threadKey").orEmpty()
+                    // Secours : si l'onglet n'est pas sur la pile (chemin
+                    // inattendu), le fil vit avec son propre modèle plutôt que
+                    // de planter ; il perd seulement la configuration partagée.
+                    val listEntry = remember(entry) {
+                        runCatching { nav.getBackStackEntry(Tabs.MAIL) }.getOrDefault(entry)
+                    }
                     val listVm: MailListViewModel = viewModel(viewModelStoreOwner = listEntry)
                     MailThreadScreen(
                         threadKey = key,
@@ -621,7 +757,7 @@ private fun HomeShell(
                     )
                 }
                 composable(
-                    route = "${Tabs.MAIL_COMPOSE}/{mode}/{emailId}?draft={draft}",
+                    route = "${Tabs.MAIL_COMPOSE}/{mode}/{emailId}?draft={draft}&srv={srv}",
                     arguments = listOf(
                         navArgument("mode") { type = NavType.StringType },
                         navArgument("emailId") { type = NavType.IntType },
@@ -629,30 +765,48 @@ private fun HomeShell(
                             type = NavType.StringType
                             defaultValue = ""
                         },
+                        navArgument("srv") {
+                            type = NavType.IntType
+                            defaultValue = 0
+                        },
                     ),
                 ) { entry ->
                     // Le mot du brouillon gardé revient à la liste, seul écran
                     // encore là pour le dire — d'où le détour par son ViewModel.
-                    val listEntry = remember(entry) { nav.getBackStackEntry(Tabs.MAIL) }
+                    val listEntry = remember(entry) {
+                        runCatching { nav.getBackStackEntry(Tabs.MAIL) }.getOrDefault(entry)
+                    }
                     val listVm: MailListViewModel = viewModel(viewModelStoreOwner = listEntry)
                     val encodedDraft = entry.arguments?.getString("draft").orEmpty()
                     val mode = entry.arguments?.getString("mode") ?: "new"
                     // Une réponse ou un brouillon repris n'a rien à voir avec un
                     // partage : seul un message NEUF peut en adopter un.
+                    val serverDraftId = entry.arguments?.getInt("srv") ?: 0
                     val shared = remember(entry) {
-                        if (mode == "new" && encodedDraft.isBlank()) ShareIntake.take() else null
+                        if (mode == "new" && encodedDraft.isBlank() && serverDraftId == 0)
+                            ShareIntake.take() else null
                     }
                     MailComposeScreen(
                         mode = mode,
                         emailId = entry.arguments?.getInt("emailId") ?: 0,
                         shared = shared,
-                        draftId = runCatching { URLDecoder.decode(encodedDraft, "UTF-8") }
-                            .getOrDefault(encodedDraft),
+                        draftId = encodedDraft,
+                        serverDraftId = serverDraftId,
                         onBack = { saved ->
                             nav.popBackStack()
                             if (saved) listVm.announceDraftSaved()
+                            // La reprise d'un brouillon du poste vient d'être
+                            // gardée sur l'appareil ; c'est la liste qui la
+                            // fait remonter, et elle ne le fait qu'en relisant.
+                            if (serverDraftId > 0) listVm.refreshServerDrafts()
                         },
-                        onSent = { nav.popBackStack() },
+                        onSent = { message ->
+                            nav.popBackStack()
+                            if (serverDraftId > 0) listVm.refreshServerDrafts()
+                            // Le bandeau des envois le dit, où que l'on atterrisse :
+                            // une réponse ramène au fil, pas à la liste.
+                            message?.let { Graph.envois.annoncer(it) }
+                        },
                     )
                 }
             }
@@ -664,23 +818,36 @@ private fun HomeShell(
                 tabs.forEach { service ->
                     add(
                         if (service == Service.MAIL) {
-                            Triple(Tabs.MAIL, service.label, Icons.Filled.MailOutline)
+                            Triple(Tabs.MAIL, service.labelRes, Icons.Filled.MailOutline)
                         } else {
-                            Triple(Tabs.SMS, service.label, Icons.AutoMirrored.Filled.Chat)
+                            Triple(Tabs.SMS, service.labelRes, Icons.AutoMirrored.Filled.Chat)
                         },
                     )
                 }
                 if (phone.enabled && tokens.isNotEmpty()) {
-                    add(Triple(Tabs.PHONE, "Téléphone", Icons.Filled.Dialpad))
+                    add(Triple(Tabs.PHONE, R.string.tab_phone, Icons.Filled.Dialpad))
                 }
                 if (genfox.enabled && tokens.isNotEmpty()) {
-                    add(Triple(Tabs.GENFOX, "Gen", Icons.Filled.AutoAwesome))
+                    add(Triple(Tabs.GENFOX, R.string.tab_gen, Icons.Filled.AutoAwesome))
                 }
                 if (agenda.enabled && tokens.isNotEmpty()) {
-                    add(Triple(Tabs.AGENDA, "Agenda", Icons.Filled.CalendarMonth))
-                    add(Triple(Tabs.TASKS, "Tâches", Icons.Filled.Checklist))
+                    add(Triple(Tabs.AGENDA, R.string.tab_calendar, Icons.Filled.CalendarMonth))
+                    add(Triple(Tabs.TASKS, R.string.tab_tasks, Icons.Filled.Checklist))
                 }
             }
+            // « Annuler l'envoi » et ce qu'un composeur fermé avait à dire, sur
+            // tous les écrans : une réponse ramène au fil, un courriel neuf à
+            // la liste, et l'envoi en attente doit rester à portée de doigt.
+            BandeauEnvois(
+                onOuvrirBrouillon = { draftId ->
+                    Graph.drafts.get(draftId)?.let { draft ->
+                        nav.navigate(
+                            "${Tabs.MAIL_COMPOSE}/${draft.mode}/${draft.emailId}" +
+                                "?draft=${argumentDeRoute(draft.id)}",
+                        )
+                    }
+                },
+            )
             if (bottomTabs.size > 1 && onRoot) {
                 // ⚠️ Au-delà de quatre onglets, Material3 serre les libellés et
                 // rétrécit les pictogrammes jusqu'à les rendre illisibles. Passé ce
@@ -690,7 +857,8 @@ private fun HomeShell(
                 // rien.
                 val serree = bottomTabs.size > 4
                 NavigationBar {
-                    bottomTabs.forEach { (tabRoute, label, icon) ->
+                    bottomTabs.forEach { (tabRoute, labelRes, icon) ->
+                        val label = stringResource(labelRes)
                         NavigationBarItem(
                             selected = route == tabRoute,
                             onClick = {
@@ -701,11 +869,28 @@ private fun HomeShell(
                                 }
                             },
                             icon = {
-                                Icon(
-                                    icon,
-                                    contentDescription = label,
-                                    modifier = if (serree) Modifier.size(28.dp) else Modifier,
-                                )
+                                // Là où c'est pertinent, et seulement là : les
+                                // non-lus des messages et du courriel, les
+                                // retards des tâches. Voir `Badges`.
+                                val compte = when (tabRoute) {
+                                    Tabs.SMS -> badges.sms
+                                    Tabs.MAIL -> badges.courriel
+                                    Tabs.TASKS -> badges.taches
+                                    else -> 0
+                                }
+                                BadgedBox(
+                                    badge = {
+                                        if (compte > 0) {
+                                            Badge { Text(if (compte > 99) "99+" else "$compte") }
+                                        }
+                                    },
+                                ) {
+                                    Icon(
+                                        icon,
+                                        contentDescription = if (compte > 0) "$label, $compte" else label,
+                                        modifier = if (serree) Modifier.size(28.dp) else Modifier,
+                                    )
+                                }
                             },
                             label = if (serree) null else ({ Text(label) }),
                             alwaysShowLabel = !serree,
@@ -713,6 +898,54 @@ private fun HomeShell(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Relit les trois compteurs des pastilles, en silence.
+ *
+ * Lancé hors de la composition : un battement qui mourrait avec l'onglet
+ * courant relirait deux fois quand on change d'onglet à la minute pile.
+ * Chaque compteur est indépendant : un courriel en panne ne fige pas les SMS.
+ */
+@OptIn(DelicateCoroutinesApi::class)
+private fun relireLesPastilles(sms: Boolean, mail: Boolean, taches: Boolean) {
+    GlobalScope.launch(Dispatchers.IO) {
+        // Les sondes de capacités se rejouent tant qu'elles n'ont pas
+        // répondu (chacune est un no-op une fois chargée) : ouverte sans
+        // réseau, l'app retrouve ses onglets au retour du réseau.
+        runCatching { Graph.agendaStore.ensureLoaded() }
+        runCatching { Graph.genfoxStore.ensureLoaded() }
+        runCatching { Graph.phoneStore.ensureLoaded() }
+        runCatching { Graph.speechStore.ensureLoaded() }
+        if (sms) {
+            runCatching { Graph.sms.threads(archived = 0) }
+                .onSuccess { Graph.badges.poserSms(nonLusDesFils(it)) }
+        }
+        if (mail) {
+            // Un envoi que le délai d'annulation retenait, et que plus rien
+            // n'aurait fait partir si l'app a été tuée pendant ces secondes
+            // (#25764) : la relecture à la minute le rattrape.
+            runCatching { Graph.envois.vider() }
+            // Les non-lus de la RÉCEPTION (#25717) ; `unread` sur un serveur
+            // qui ne les rend pas encore. Voir `pastilleCourriel`.
+            runCatching { Graph.mail.counts(Graph.uiPrefs.threadView) }
+                .onSuccess { Graph.badges.poserCourriel(pastilleCourriel(it)) }
+        }
+        if (taches) {
+            // Les retards ET le reste d'aujourd'hui (#25717). Le serveur rend
+            // les retards quelles que soient les bornes ; la fenêtre s'arrête
+            // donc à MINUIT, dans le fuseau de l'appareil. Elle allait jusqu'à
+            // « maintenant plus 24 h », qui mord sur demain dès le matin — et
+            // la pastille ne comptait de toute façon que les retards.
+            val zone = ZoneId.systemDefault()
+            val aujourdhui = LocalDate.now(zone)
+            val minuit = aujourdhui.plusDays(1).atStartOfDay(zone).toInstant()
+            runCatching { Graph.agenda.tasks(Instant.now(), minuit) }
+                .onSuccess {
+                    Graph.badges.poserTaches(pastilleTaches(it.overdue, it.window, zone, aujourdhui))
+                }
         }
     }
 }
@@ -737,8 +970,9 @@ private fun HostingBanner(alerts: com.bluefoxconsultant.sms.data.HostingAlerts) 
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         ) {
             Text(
-                if (alerts.isDown) "Hébergement — ${alerts.summary}"
-                else "Hébergement : ${alerts.summary}",
+                // Le résumé vient du serveur, déjà dans sa langue.
+                if (alerts.isDown) stringResource(R.string.hosting_banner_down, alerts.summary)
+                else stringResource(R.string.hosting_banner, alerts.summary),
                 color = Color.White,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -789,19 +1023,17 @@ private fun CallGapBanner(gap: CallGap) {
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         ) {
             Text(
-                if (down) "Les appels ne sonneront pas"
-                else "Les appels peuvent cesser de sonner",
+                if (down) stringResource(R.string.call_gap_no_ring_title)
+                else stringResource(R.string.call_gap_may_stop_title),
                 color = Color.White,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
                 if (down) {
-                    "Android n'autorise pas l'écran d'appel par-dessus le " +
-                        "verrouillage."
+                    stringResource(R.string.call_gap_no_ring_text)
                 } else {
-                    "Android met l'app en pause si elle reste inutilisée, et " +
-                        "plus rien ne lui parvient."
+                    stringResource(R.string.call_gap_may_stop_text)
                 },
                 color = Color.White.copy(alpha = 0.9f),
                 fontSize = 12.sp,
@@ -831,13 +1063,13 @@ private fun CallGapBanner(gap: CallGap) {
                                 runCatching { context.startActivity(intent) }
                             }
                         },
-                    ) { Text("Ouvrir le réglage", color = Color.White, fontSize = 12.sp) }
+                    ) { Text(stringResource(R.string.call_gap_open_setting), color = Color.White, fontSize = 12.sp) }
                     TextButton(
                         onClick = {
                             tairePourToujours(context, gap)
                             tue = true
                         },
-                    ) { Text("C'est déjà réglé", color = Color.White, fontSize = 12.sp) }
+                    ) { Text(stringResource(R.string.call_gap_already_set), color = Color.White, fontSize = 12.sp) }
                 }
             }
         }
@@ -878,23 +1110,38 @@ private fun ConnectServicePane(
             modifier = Modifier.size(48.dp),
         )
         Spacer(Modifier.height(16.dp))
-        Text("${service.label} est disponible sur ce serveur",
+        val serviceLabel = stringResource(service.labelRes)
+        Text(stringResource(R.string.connect_service_available, serviceLabel),
              fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(8.dp))
         Text(
-            "Une seule étape : la page de connexion Odoo s'ouvre, puis revient. "
-            + "Votre session Messages n'est pas touchée.",
+            stringResource(R.string.connect_service_explainer),
             fontSize = 13.sp,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(24.dp))
         Button(onClick = { vm.connectService(context, service) }, enabled = !vm.loading) {
-            Text(if (vm.loading) "Connexion…" else "Connecter ${service.label}")
+            Text(
+                if (vm.loading) stringResource(R.string.connect_service_connecting)
+                else stringResource(R.string.connect_service_button, serviceLabel),
+            )
         }
         vm.error?.let {
             Spacer(Modifier.height(12.dp))
-            Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+            Text(it.asString(), color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+        }
+        // Un seul volet : l'autre moitié reste connectée, donc un refus ne
+        // devient jamais une `error` — il ne se voyait nulle part, et le bouton
+        // avait l'air de n'avoir rien fait.
+        vm.partial?.let {
+            Spacer(Modifier.height(12.dp))
+            Text(
+                it.asString(),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+            )
         }
     }
 }

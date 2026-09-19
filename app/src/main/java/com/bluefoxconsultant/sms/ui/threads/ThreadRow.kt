@@ -38,6 +38,9 @@ import com.bluefoxconsultant.sms.ui.avatarColor
 import com.bluefoxconsultant.sms.ui.initials
 import com.bluefoxconsultant.sms.ui.relativeTime
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
+import androidx.compose.ui.res.stringResource
+import com.bluefoxconsultant.sms.R
+import com.bluefoxconsultant.sms.ui.asString
 
 data class ThreadAction(val label: String, val onClick: () -> Unit)
 
@@ -53,6 +56,7 @@ fun ThreadRow(
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val unread = thread.unreadCount > 0
+    val name = thread.displayName.asString()
 
     Box {
         Row(
@@ -82,13 +86,13 @@ fun ThreadRow(
                 ) {
                     Icon(
                         Icons.Filled.Check,
-                        contentDescription = "Sélectionné",
+                        contentDescription = stringResource(R.string.common_selected),
                         tint = Color.White,
                         modifier = Modifier.size(22.dp),
                     )
                 }
             } else {
-                Avatar(thread.displayName)
+                Avatar(name)
             }
             Spacer(Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -96,14 +100,14 @@ fun ThreadRow(
                     if (thread.isPinned) {
                         Icon(
                             Icons.Filled.PushPin,
-                            contentDescription = "Épinglé",
+                            contentDescription = stringResource(R.string.sms_threads_pinned),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(14.dp),
                         )
                         Spacer(Modifier.width(4.dp))
                     }
                     Text(
-                        text = thread.displayName,
+                        text = name,
                         fontWeight = if (unread) FontWeight.Bold else FontWeight.Medium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,

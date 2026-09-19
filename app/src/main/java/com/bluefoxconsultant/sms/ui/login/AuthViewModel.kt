@@ -16,6 +16,9 @@ import com.bluefoxconsultant.sms.data.Service
 import com.bluefoxconsultant.sms.push.PushRegistrar
 import kotlinx.coroutines.launch
 import java.security.SecureRandom
+import com.bluefoxconsultant.sms.R
+import com.bluefoxconsultant.sms.ui.UiText
+import com.bluefoxconsultant.sms.ui.uiText
 
 /**
  * Web-login capture, chained across both services.
@@ -35,24 +38,31 @@ class AuthViewModel : ViewModel() {
 
     var loading by mutableStateOf(false)
         private set
-    var error by mutableStateOf<String?>(null)
+    var error by mutableStateOf<UiText?>(null)
         private set
     /** Non-null when one half signed in and the other refused — shown as a note. */
-    var partial by mutableStateOf<String?>(null)
+    var partial by mutableStateOf<UiText?>(null)
         private set
+
+    /**
+     * La personne a touché « Refuser » sur la page de consentement d'un volet.
+     * Ce n'est ni une panne ni un refus du serveur, et le message le dit.
+     */
+    private var refuseDansLeNavigateur = false
 
     /** Start the chain: probe first so we only open legs that can succeed. */
     fun startLogin(context: Context) {
         val instance = Graph.tokenStore.instanceUrl ?: return
         error = null
         partial = null
+        refuseDansLeNavigateur = false
         loading = true
         val appContext = context.applicationContext
         viewModelScope.launch {
             val available = probe(instance)
             loading = false
             if (available.isEmpty()) {
-                error = "Aucun module compatible sur ce serveur."
+                error = uiText(R.string.login_error_no_module)
                 return@launch
             }
             Graph.tokenStore.saveAvailable(available)
@@ -80,6 +90,7 @@ class AuthViewModel : ViewModel() {
     fun connectService(context: Context, service: Service) {
         error = null
         partial = null
+        refuseDansLeNavigateur = false
         openLeg(context, service)
     }
 
@@ -111,7 +122,7 @@ class AuthViewModel : ViewModel() {
             onglet.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             onglet.launchUrl(context, Uri.parse(url))
         } catch (e: Exception) {
-            error = "Impossible d'ouvrir le navigateur."
+            error = uiText(R.string.login_error_browser)
         }
     }
 
@@ -131,7 +142,7 @@ class AuthViewModel : ViewModel() {
             state != expected || service == null || verifier.isNullOrBlank()
         ) {
             Graph.tokenStore.clearPendingState()
-            error = "Connexion échouée, réessayez."
+            error = uiText(R.string.login_error_failed)
             return
         }
         Graph.tokenStore.clearPendingState()
@@ -139,6 +150,13 @@ class AuthViewModel : ViewModel() {
         val appContext = context.applicationContext
         if (code.isNullOrBlank()) {
             // This half said no. Note why, then carry on to the next leg.
+            //
+            // ⚠️ Même quand c'est la PERSONNE qui a refusé (`access_denied`,
+            // depuis la page de consentement que `auth/start` montre désormais
+            // avant de rediriger) : chaque volet a sa page, qui nomme son
+            // module, et refuser les messages ne veut pas dire refuser le
+            // courriel. Arrêter la chaîne ici rendrait un compte « courriel
+            // seulement » impossible à connecter depuis l'écran de connexion.
             noteLegRefused(service, legError)
             continueChain(appContext, after = service)
             return
@@ -184,22 +202,28 @@ class AuthViewModel : ViewModel() {
         // Chain done. Saving a token already flipped navigation; if nothing was
         // obtained at all, say so instead of leaving the button looking inert.
         if (!store.isSignedIn && error == null) {
-            error = partial ?: "Connexion échouée, réessayez."
+            error = if (refuseDansLeNavigateur) uiText(R.string.login_error_pairing_refused)
+            else partial ?: uiText(R.string.login_error_failed)
             partial = null
         }
     }
 
     private fun noteLegRefused(service: Service, reason: String?) {
+        if (reason == "access_denied") {
+            refuseDansLeNavigateur = true
+            partial = uiText(R.string.login_partial_pairing_refused, uiText(service.labelRes))
+            return
+        }
         val why = when (reason) {
-            "no_mailbox" -> "aucune boîte courriel n'est configurée sur ce compte"
-            "no_access" -> "ce compte n'a pas accès à ce module"
+            "no_mailbox" -> R.string.login_reason_no_mailbox
+            "no_access" -> R.string.login_reason_no_access
             // Only an app older than napkin #25275 lot A can be told this, and
             // that app has no such message. Named anyway: the day it shows up,
             // it says which side is behind rather than "refused".
-            "pkce_required" -> "cette version de l'application est trop ancienne pour ce serveur"
-            else -> "le serveur a refusé la connexion"
+            "pkce_required" -> R.string.login_reason_pkce_required
+            else -> R.string.login_reason_refused
         }
-        partial = "${service.label} indisponible : $why."
+        partial = uiText(R.string.login_partial_unavailable, uiText(service.labelRes), uiText(why))
     }
 
     /** Forget the instance so the app returns to the Instance screen. */

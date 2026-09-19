@@ -31,7 +31,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material3.FilterChip
+import com.bluefoxconsultant.sms.data.DELAIS_ANNULATION
 import com.bluefoxconsultant.sms.data.QuickAction
+import androidx.compose.foundation.layout.Arrangement
 import com.bluefoxconsultant.sms.data.SwipeAction
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -40,11 +42,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.material3.TextButton
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bluefoxconsultant.sms.data.Graph
 import com.bluefoxconsultant.sms.data.ThemeMode
+import com.bluefoxconsultant.sms.push.PushRegistrar
+import com.bluefoxconsultant.sms.ui.DialogueDistributeur
+import com.bluefoxconsultant.sms.ui.libelleDistributeur
 import com.bluefoxconsultant.sms.ui.mail.AttachmentOpener
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import com.bluefoxconsultant.sms.R
 
 @Composable
 fun SettingsScreen(
@@ -57,10 +69,10 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Paramètres", fontWeight = FontWeight.SemiBold) },
+                title = { Text(stringResource(R.string.settings_title), fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -77,22 +89,25 @@ fun SettingsScreen(
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState()),
         ) {
-            SectionTitle("Apparence")
-            ThemeOption("Système", themeMode == ThemeMode.SYSTEM) { vm.setTheme(ThemeMode.SYSTEM) }
-            ThemeOption("Clair", themeMode == ThemeMode.LIGHT) { vm.setTheme(ThemeMode.LIGHT) }
-            ThemeOption("Sombre", themeMode == ThemeMode.DARK) { vm.setTheme(ThemeMode.DARK) }
+            SectionTitle(stringResource(R.string.settings_appearance))
+            ThemeOption(stringResource(ThemeMode.SYSTEM.libelleRes), themeMode == ThemeMode.SYSTEM) { vm.setTheme(ThemeMode.SYSTEM) }
+            ThemeOption(stringResource(ThemeMode.LIGHT.libelleRes), themeMode == ThemeMode.LIGHT) { vm.setTheme(ThemeMode.LIGHT) }
+            ThemeOption(stringResource(ThemeMode.DARK.libelleRes), themeMode == ThemeMode.DARK) { vm.setTheme(ThemeMode.DARK) }
 
             HorizontalDivider(
                 modifier = Modifier.padding(vertical = 8.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant,
             )
 
-            SectionTitle("Compte")
-            InfoRow("Serveur", vm.serverUrl)
-            if (vm.userName.isNotBlank()) InfoRow("Utilisateur", vm.userName)
+            SectionTitle(stringResource(R.string.settings_account))
+            InfoRow(stringResource(R.string.settings_server), vm.serverUrl)
+            if (vm.userName.isNotBlank()) InfoRow(stringResource(R.string.settings_user), vm.userName)
+
+            PushSettings()
 
             Spacer(Modifier.height(20.dp))
             SwipeSettings()
+            UndoSendSettings()
             QuickActionSettings()
             HostingSettings()
             Button(
@@ -111,7 +126,7 @@ fun SettingsScreen(
                     .padding(horizontal = 16.dp)
                     .height(50.dp),
             ) {
-                Text("Déconnexion", fontSize = 16.sp)
+                Text(stringResource(R.string.settings_sign_out), fontSize = 16.sp)
             }
             Spacer(Modifier.height(20.dp))
         }
@@ -154,6 +169,64 @@ private fun InfoRow(label: String, value: String) {
 
 
 /**
+ * L'app qui livre les notifications, et de quoi en changer.
+ *
+ * Le choix se pose à la connexion quand plusieurs distributeurs sont installés
+ * sans défaut ; ici il se reprend quand on veut — après avoir installé un
+ * second distributeur, ou fermé le dialogue sans choisir.
+ */
+@Composable
+private fun PushSettings() {
+    val context = LocalContext.current
+    var courant by remember { mutableStateOf(PushRegistrar.distributeurCourant(context)) }
+    var installes by remember { mutableStateOf(PushRegistrar.distributeursInstalles(context)) }
+    var ouvert by remember { mutableStateOf(false) }
+
+    SectionTitle(stringResource(R.string.settings_notifications))
+    InfoRow(
+        stringResource(R.string.settings_distributor),
+        courant?.let { libelleDistributeur(context, it) }
+            ?: if (installes.isEmpty()) stringResource(R.string.settings_distributor_none_installed)
+            else stringResource(R.string.settings_distributor_none_chosen),
+    )
+    if (installes.isEmpty()) {
+        Text(
+            stringResource(R.string.settings_distributor_install_hint),
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
+    } else {
+        TextButton(
+            onClick = {
+                // Relu à l'ouverture : un distributeur a pu être installé ou
+                // retiré depuis que l'écran est là.
+                installes = PushRegistrar.distributeursInstalles(context)
+                ouvert = true
+            },
+            modifier = Modifier.padding(horizontal = 8.dp),
+        ) {
+            Text(
+                if (courant == null) stringResource(R.string.settings_distributor_choose)
+                else stringResource(R.string.settings_distributor_change),
+            )
+        }
+    }
+    if (ouvert && installes.isNotEmpty()) {
+        DialogueDistributeur(
+            candidats = installes,
+            courant = courant,
+            onChoisir = {
+                PushRegistrar.utiliser(context, it)
+                courant = it
+                ouvert = false
+            },
+            onFermer = { ouvert = false },
+        )
+    }
+}
+
+/**
  * Which gesture does what, per direction and per half.
  *
  * Kept as a plain list of choices rather than a picker dialog: there are four
@@ -174,20 +247,16 @@ private fun HostingSettings() {
     val context = LocalContext.current
 
     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-        SectionTitle("Hébergement")
+        SectionTitle(stringResource(R.string.settings_hosting))
         Text(
-            "Par défaut, la bannière ne compte que ce qui est cassé : services "
-                + "hors ligne ou ralentis, disques pleins, sauvegardes en retard. "
-                + "Les entretiens dus sont une intention, pas une panne — et le "
-                + "parc en porte assez pour laisser la bannière allumée en "
-                + "permanence, ce qui lui retire tout pouvoir d'alerte.",
+            stringResource(R.string.settings_hosting_explainer),
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 8.dp),
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "Compter aussi les entretiens en retard",
+                stringResource(R.string.settings_hosting_count_maintenance),
                 fontSize = 14.sp,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f),
@@ -205,6 +274,42 @@ private fun HostingSettings() {
     }
 }
 
+/**
+ * Le délai pendant lequel un envoi de courriel peut encore être annulé
+ * (#25764). « Aucun » garde l'envoi au toucher, comme avant.
+ */
+@Composable
+private fun UndoSendSettings() {
+    val prefs = Graph.uiPrefs
+    val delai by prefs.delaiAnnulationFlow.collectAsState()
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Text(
+            stringResource(R.string.settings_undo_send),
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(vertical = 8.dp),
+        )
+        // Défile plutôt que déborder : cinq puces ne tiennent pas à 360 dp ni
+        // en grande police.
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+        ) {
+            DELAIS_ANNULATION.forEach { secondes ->
+                FilterChip(
+                    selected = delai == secondes,
+                    onClick = { prefs.setDelaiAnnulation(secondes) },
+                    label = {
+                        Text(
+                            if (secondes == 0) stringResource(R.string.settings_undo_send_off)
+                            else stringResource(R.string.settings_undo_send_seconds, secondes),
+                        )
+                    },
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun SwipeSettings() {
     val prefs = Graph.uiPrefs
@@ -212,21 +317,21 @@ private fun SwipeSettings() {
 
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
         Text(
-            "Gestes de balayage",
+            stringResource(R.string.settings_swipe_gestures),
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(vertical = 8.dp),
         )
         SwipeChoiceRow(
-            "Courriel — vers la droite", config.mailStart, SwipeAction.forMail,
+            stringResource(R.string.settings_swipe_mail_right), config.mailStart, SwipeAction.forMail,
         ) { prefs.save(config.copy(mailStart = it)) }
         SwipeChoiceRow(
-            "Courriel — vers la gauche", config.mailEnd, SwipeAction.forMail,
+            stringResource(R.string.settings_swipe_mail_left), config.mailEnd, SwipeAction.forMail,
         ) { prefs.save(config.copy(mailEnd = it)) }
         SwipeChoiceRow(
-            "Messages — vers la droite", config.smsStart, SwipeAction.forSms,
+            stringResource(R.string.settings_swipe_sms_right), config.smsStart, SwipeAction.forSms,
         ) { prefs.save(config.copy(smsStart = it)) }
         SwipeChoiceRow(
-            "Messages — vers la gauche", config.smsEnd, SwipeAction.forSms,
+            stringResource(R.string.settings_swipe_sms_left), config.smsEnd, SwipeAction.forSms,
         ) { prefs.save(config.copy(smsEnd = it)) }
     }
 }
@@ -245,12 +350,16 @@ private fun QuickActionSettings() {
 
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
         Text(
-            "Boutons rapides (courriel)",
+            stringResource(R.string.settings_quick_buttons),
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(vertical = 8.dp),
         )
         Text(
-            "Jusqu'à ${QuickAction.MAX_IN_BAR} actions hors du menu ⋯.",
+            pluralStringResource(
+                R.plurals.settings_quick_buttons_hint,
+                QuickAction.MAX_IN_BAR,
+                QuickAction.MAX_IN_BAR,
+            ),
             fontSize = 13.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -265,7 +374,7 @@ private fun QuickActionSettings() {
                 FilterChip(
                     selected = selected,
                     onClick = { prefs.setQuickActions(QuickAction.toggle(quick, action)) },
-                    label = { Text(action.label, fontSize = 12.sp) },
+                    label = { Text(stringResource(action.labelRes), fontSize = 12.sp) },
                     modifier = Modifier.padding(end = 6.dp),
                 )
             }
@@ -287,7 +396,7 @@ private fun SwipeChoiceRow(
                 FilterChip(
                     selected = option == current,
                     onClick = { onPick(option) },
-                    label = { Text(option.label, fontSize = 12.sp) },
+                    label = { Text(stringResource(option.labelRes), fontSize = 12.sp) },
                     modifier = Modifier.padding(end = 6.dp),
                 )
             }

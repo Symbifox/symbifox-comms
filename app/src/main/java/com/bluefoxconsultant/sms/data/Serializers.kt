@@ -68,3 +68,23 @@ object FalseAsNullIntSerializer : KSerializer<Int?> {
         if (value == null) encoder.encodeNull() else encoder.encodeInt(value)
     }
 }
+
+/**
+ * Un champ texte d'Odoo vide arrive en `false` (`search_read`), plein en chaîne.
+ * Décoder `false` dans un `String` lève ; on le rend vide. Tout autre scalaire
+ * passe par son contenu, un objet ou une liste donnent vide.
+ */
+object FalseAsEmptyStringSerializer : KSerializer<String> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("FalseAsEmptyString", PrimitiveKind.STRING)
+
+    override fun deserialize(decoder: Decoder): String {
+        val jd = decoder as? JsonDecoder ?: return decoder.decodeString()
+        val element = jd.decodeJsonElement() as? JsonPrimitive ?: return ""
+        return if (element.isString) element.content else ""
+    }
+
+    override fun serialize(encoder: Encoder, value: String) {
+        encoder.encodeString(value)
+    }
+}

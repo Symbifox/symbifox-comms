@@ -30,8 +30,10 @@ class PhoneStore(private val repo: PhoneRepository) {
             // A missing module answers 404 and an unauthorised device 401. Both
             // mean "no phone here", which is a disabled button, not an error to
             // put in front of the user.
-            _config.value = runCatching { repo.config() }.getOrDefault(PhoneConfig())
-            loaded = true
+            // `loaded` seulement sur réponse : voir `AgendaStore`.
+            val config = runCatching { repo.config() }.getOrNull()
+            _config.value = config ?: PhoneConfig()
+            loaded = config != null
         }
     }
 

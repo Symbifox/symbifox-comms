@@ -8,6 +8,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import com.bluefoxconsultant.sms.R
+import com.bluefoxconsultant.sms.ui.UiText
 
 /**
  * Les brouillons, sans appareil.
@@ -95,6 +97,17 @@ class MailDraftsTest {
         // Et l'écriture suivante repart proprement plutôt que de rester coincée.
         s.save(draft("d1"))
         assertEquals(1, store().drafts.value.size)
+    }
+
+    @Test
+    fun `les libelles d'un brouillon sont des ressources, le texte tape reste tel quel`() {
+        val vide = MailDraft(id = "d1")
+        assertEquals(UiText.Res(R.string.common_no_subject), vide.label)
+        assertEquals(UiText.Res(R.string.common_no_recipient), vide.recipients)
+        assertEquals(UiText.Res(R.string.mail_draft_kind_new), vide.kindLabel)
+        assertEquals(UiText.Res(R.string.mail_draft_kind_reply_all), vide.copy(mode = "reply_all").kindLabel)
+        // Sans objet, la première ligne non vide du corps tient lieu de titre.
+        assertEquals(UiText.Raw("Bonjour"), vide.copy(body = "\n  Bonjour \nsuite").label)
     }
 
     @Test

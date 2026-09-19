@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Les chaînes du socle visuel commun (BF #25765).
+
+  ⚠️ Volontairement dans un fichier à part de `strings.xml` : Android fusionne
+  tous les `res/values/*.xml`, et un fichier distinct se commite sans emporter
+  le travail en cours d'une autre session dans le fichier principal.
+-->
+<resources>
+    <string name="socle_compte_titre">Your Symbifox account</string>
+    <string name="socle_compte_autre">Another server</string>
+    <string name="socle_compte_revenir">Back to my Symbifox account</string>
+</resources>

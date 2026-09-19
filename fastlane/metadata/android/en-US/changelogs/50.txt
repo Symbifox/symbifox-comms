@@ -1,0 +1,17 @@
+* Tasks: the list now reads day by day — Overdue, Today, one heading for
+  each of the next seven days, then Later. A task due this morning stays in
+  Today, and tasks without a deadline come first
+* Badges: mail counts unread messages in the inbox, and tasks count what is
+  overdue plus what is due today
+* Notifications: end-to-end encrypted between your instance and the phone
+  once the server is up to date, and the app that delivers them is yours to
+  pick (Settings, Notifications) instead of being chosen for you
+* Sharing to Comms: a shared file is offered, not sent; it only leaves with
+  "Attach" or "Send". Files that are too large are refused before loading
+* Security: no session is ever written in clear text when the Android key
+  store refuses to open; the app says so, and you will need to sign in again
+* Calendar: deadline badges land on the right day when the account's time
+  zone differs from the phone's
+* New icon, shared by the Symbifox apps: the full-size illustration on a very
+  pale blue background, instead of the black disc
+* Language: the app follows the phone's, in French or English

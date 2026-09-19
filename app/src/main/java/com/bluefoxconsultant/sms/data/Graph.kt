@@ -1,6 +1,9 @@
 package com.bluefoxconsultant.sms.data
 
 import android.content.Context
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import com.bluefoxconsultant.sms.network.AgendaRepository
 import com.bluefoxconsultant.sms.network.ApiClient
 import com.bluefoxconsultant.sms.network.GenfoxRepository
@@ -104,8 +107,22 @@ object Graph {
     lateinit var drafts: MailDrafts
         private set
 
+    /**
+     * La portée des tâches qui survivent aux écrans : un envoi dont le délai
+     * d'annulation court encore ne doit pas mourir avec le composeur.
+     */
+    val portee: CoroutineScope by lazy { CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate) }
+
+    /** « Annuler l'envoi » : les envois qui attendent leur délai (#25764). */
+    lateinit var envois: EnvoisDifferes
+        private set
+
     /** Colours taken from the connected instance; Symbifox until it answers. */
     lateinit var brandStore: BrandStore
+        private set
+
+    /** Les pastilles de la barre du bas : non-lus et retards. */
+    lateinit var badges: BadgeStore
         private set
 
     /** Per-direction swipe actions, chosen by the user. */
@@ -153,7 +170,9 @@ object Graph {
         mailCache = MailCache(context.applicationContext)
         outbox = MailOutbox(context.applicationContext)
         drafts = MailDrafts(context.applicationContext)
+        envois = EnvoisDifferes(outbox, drafts, { mail.replay(it) }, portee)
         brandStore = BrandStore(context.applicationContext)
+        badges = BadgeStore()
         uiPrefs = UiPrefs(context.applicationContext)
         initialized = true
     }

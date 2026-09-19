@@ -133,8 +133,9 @@ object IncomingCall {
 
     private fun notifier(context: Context, peer: String, name: String) {
         creerLeCanal(context)
-        val titre = name.ifBlank { peer.ifBlank { "Appel entrant" } }
-        val sousTitre = if (name.isBlank()) "Appel entrant" else peer.ifBlank { "Appel entrant" }
+        val appelEntrant = context.getString(R.string.common_incoming_call)
+        val titre = name.ifBlank { peer.ifBlank { appelEntrant } }
+        val sousTitre = if (name.isBlank()) appelEntrant else peer.ifBlank { appelEntrant }
 
         val plein = ecran(context, answer = false)
         val repondre = ecran(context, answer = true)
@@ -162,8 +163,8 @@ object IncomingCall {
             // que faisait la notification du service d'appel, en importance
             // basse, sans bouton pour répondre.
             .setFullScreenIntent(plein, true)
-            .addAction(R.drawable.ic_stat_sms, "Répondre", repondre)
-            .addAction(R.drawable.ic_stat_sms, "Refuser", refuser)
+            .addAction(R.drawable.ic_stat_sms, context.getString(R.string.common_answer_call), repondre)
+            .addAction(R.drawable.ic_stat_sms, context.getString(R.string.common_decline_call), refuser)
             .build()
 
         runCatching {
@@ -194,14 +195,23 @@ object IncomingCall {
      * ça que la sonnerie ne réutilise pas le canal « call » du service d'appel,
      * volontairement silencieux et en importance basse — il ne pourrait plus
      * jamais sonner.
+     *
+     * ⚠️ Recréé à chaque sonnerie, sans garde « déjà là » : pour un canal
+     * existant, Android ne met à jour QUE le nom et la description, donc le nom
+     * suit la langue du téléphone. L'importance, la vibration, le Ne pas
+     * déranger et la visibilité restent ceux déjà en place, ou réglés par la
+     * personne. Une garde figeait le nom français chez qui a déjà l'app.
      */
     private fun creerLeCanal(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
-        if (nm.getNotificationChannel(CHANNEL) != null) return
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL, "Appels entrants", NotificationManager.IMPORTANCE_HIGH)
+            NotificationChannel(
+                CHANNEL,
+                context.getString(R.string.incoming_call_channel_name),
+                NotificationManager.IMPORTANCE_HIGH,
+            )
                 .apply {
-                    description = "Sonnerie des appels reçus sur le poste SIP"
+                    description = context.getString(R.string.incoming_call_channel_description)
                     setBypassDnd(false)
                     enableVibration(true)
                     lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC

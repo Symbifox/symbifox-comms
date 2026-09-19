@@ -32,6 +32,9 @@ import com.bluefoxconsultant.sms.sip.SipEngine
 import com.bluefoxconsultant.sms.data.PhoneConfig
 import com.bluefoxconsultant.sms.network.ApiException
 import kotlinx.coroutines.launch
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.bluefoxconsultant.sms.R
 
 /**
  * Call button for a top app bar, with the confirmation the act deserves.
@@ -62,7 +65,7 @@ fun CallAction(
     var placing by remember { mutableStateOf(false) }
 
     IconButton(onClick = { asking = true }, enabled = enabled && !placing) {
-        Icon(Icons.Filled.Call, contentDescription = "Appeler")
+        Icon(Icons.Filled.Call, contentDescription = stringResource(R.string.common_call))
     }
 
     if (asking) {
@@ -101,20 +104,20 @@ fun CallDialog(
     }
     var placing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    // Le snackbar part d'une coroutine, hors composition : la phrase s'y lit
+    // dans les ressources du contexte plutôt que par `stringResource`.
+    val context = LocalContext.current
 
     AlertDialog(
         onDismissRequest = { if (!placing) onDismiss() },
-        title = { Text("Appeler ${display.ifBlank { number }}") },
+        title = { Text(stringResource(R.string.call_dialog_title, display.ifBlank { number })) },
         text = {
             Column {
                 Text(
-                    if (ring == RING_DEVICE) {
-                        "L'appel part d'ici : vous parlez sur cet appareil, et " +
-                            "la ligne d'affaires s'affiche chez votre correspondant."
-                    } else {
-                        "Le PBX fait d'abord sonner votre appareil. Décrochez, et il " +
-                            "compose le numéro en affichant la ligne d'affaires."
-                    },
+                    stringResource(
+                        if (ring == RING_DEVICE) R.string.call_dialog_on_device
+                        else R.string.call_dialog_via_pbx,
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 // The carrier only lets a trunk present a number the account
@@ -124,8 +127,7 @@ fun CallDialog(
                 if (ring == PhoneConfig.RING_CALLBACK && config.callbackShowsAs.isNotBlank()) {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "Votre téléphone affichera ${config.callbackShowsAs} — " +
-                            "c'est bien cet appel, répondez.",
+                        stringResource(R.string.call_dialog_callback_shows_as, config.callbackShowsAs),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -140,21 +142,21 @@ fun CallDialog(
                 if (modes.size > 1) {
                     if (RING_DEVICE in modes) {
                         RingChoice(
-                            label = "Sur cet appareil",
+                            label = stringResource(R.string.call_ring_device),
                             selected = ring == RING_DEVICE,
                             onSelect = { ring = RING_DEVICE },
                         )
                     }
                     if (PhoneConfig.RING_CALLBACK in modes) {
                         RingChoice(
-                            label = "Mon numéro de rappel (${config.callbackNumber})",
+                            label = stringResource(R.string.call_ring_callback, config.callbackNumber),
                             selected = ring == PhoneConfig.RING_CALLBACK,
                             onSelect = { ring = PhoneConfig.RING_CALLBACK },
                         )
                     }
                     if (PhoneConfig.RING_EXTENSION in modes) {
                         RingChoice(
-                            label = "Mon poste ${config.extension} (navigateur)",
+                            label = stringResource(R.string.call_ring_extension, config.extension),
                             selected = ring == PhoneConfig.RING_EXTENSION,
                             onSelect = { ring = PhoneConfig.RING_EXTENSION },
                         )
@@ -183,9 +185,12 @@ fun CallDialog(
                             onDismiss()
                             snackbar.showSnackbar(
                                 if (response.showsAs.isNotBlank())
-                                    "Le PBX fait sonner ${response.ringLabel} — " +
-                                        "affichage : ${response.showsAs}."
-                                else "Le PBX fait sonner ${response.ringLabel}.",
+                                    context.getString(
+                                        R.string.call_pbx_ringing_shows_as,
+                                        response.ringLabel,
+                                        response.showsAs,
+                                    )
+                                else context.getString(R.string.call_pbx_ringing, response.ringLabel),
                             )
                         } catch (e: ApiException) {
                             // The server sends a sentence, not a code: unknown
@@ -194,17 +199,21 @@ fun CallDialog(
                             snackbar.showSnackbar(e.err)
                         } catch (e: Exception) {
                             onDismiss()
-                            snackbar.showSnackbar("Appel impossible pour l'instant.")
+                            snackbar.showSnackbar(context.getString(R.string.call_failed))
                         } finally {
                             placing = false
                             onPlacing(false)
                         }
                     }
                 },
-            ) { Text(if (placing) "Un instant…" else "Appeler") }
+            ) {
+                Text(stringResource(if (placing) R.string.call_placing else R.string.common_call))
+            }
         },
         dismissButton = {
-            TextButton(enabled = !placing, onClick = onDismiss) { Text("Annuler") }
+            TextButton(enabled = !placing, onClick = onDismiss) {
+                Text(stringResource(R.string.common_cancel))
+            }
         },
     )
 }

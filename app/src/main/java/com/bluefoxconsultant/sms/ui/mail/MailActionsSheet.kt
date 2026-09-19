@@ -37,15 +37,18 @@ import androidx.compose.ui.unit.sp
 import com.bluefoxconsultant.sms.data.MailConfig
 import com.bluefoxconsultant.sms.data.MailMessage
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
+import androidx.compose.ui.res.stringResource
+import com.bluefoxconsultant.sms.R
+import com.bluefoxconsultant.sms.ui.asString
 
 /** Human labels for the `kind` values `/config` advertises in `spawn_kinds`. */
 private val SPAWN_LABELS = mapOf(
-    "task" to "Créer une tâche",
-    "ticket" to "Créer un billet",
-    "lead" to "Créer une piste",
-    "expense" to "Créer une dépense",
-    "bill" to "Créer une facture fournisseur",
-    "invoice" to "Créer une facture client",
+    "task" to R.string.quick_action_task,
+    "ticket" to R.string.mail_spawn_ticket,
+    "lead" to R.string.mail_spawn_lead,
+    "expense" to R.string.mail_spawn_expense,
+    "bill" to R.string.mail_spawn_bill,
+    "invoice" to R.string.mail_spawn_invoice,
 )
 
 /**
@@ -78,14 +81,14 @@ fun MailActionsSheet(
         ) {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
                 Text(
-                    text = message.displaySubject,
+                    text = message.displaySubject.asString(),
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 15.sp,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = message.correspondent,
+                    text = message.correspondent.asString(),
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -93,17 +96,17 @@ fun MailActionsSheet(
             HorizontalDivider()
 
             if (message.isHandled) {
-                SheetItem(Icons.Filled.Inbox, "Remettre en boîte de réception", onRestore)
+                SheetItem(Icons.Filled.Inbox, stringResource(R.string.mail_actions_restore), onRestore)
             } else {
-                SheetItem(Icons.Filled.Archive, "Archiver", onArchive)
+                SheetItem(Icons.Filled.Archive, stringResource(R.string.common_archive), onArchive)
             }
             if (message.isUnread) {
-                SheetItem(Icons.Filled.Drafts, "Marquer comme lu", onMarkRead)
+                SheetItem(Icons.Filled.Drafts, stringResource(R.string.mail_actions_mark_as_read), onMarkRead)
             }
 
             if (config.snoozePresets.isNotEmpty() && !message.isHandled) {
                 HorizontalDivider()
-                SectionLabel("Reporter")
+                SectionLabel(stringResource(R.string.common_snooze))
                 config.snoozePresets.forEach { preset ->
                     SheetItem(Icons.Filled.Schedule, preset.label) { onSnooze(preset.untilMs) }
                 }
@@ -111,15 +114,17 @@ fun MailActionsSheet(
 
             if (onRoute != null && config.routableModels.isNotEmpty()) {
                 HorizontalDivider()
-                SheetItem(Icons.Filled.Link, "Router vers un dossier", onRoute)
+                SheetItem(Icons.Filled.Link, stringResource(R.string.mail_route_to_folder), onRoute)
             }
 
             val kinds = config.spawnKinds.filter { it in SPAWN_LABELS }
             if (kinds.isNotEmpty()) {
                 HorizontalDivider()
-                SectionLabel("Créer dans Odoo")
+                SectionLabel(stringResource(R.string.mail_actions_create_in_odoo))
                 kinds.forEach { kind ->
-                    SheetItem(Icons.AutoMirrored.Filled.PlaylistAdd, SPAWN_LABELS.getValue(kind)) { onSpawn(kind) }
+                    SheetItem(Icons.AutoMirrored.Filled.PlaylistAdd, stringResource(SPAWN_LABELS.getValue(kind))) {
+                        onSpawn(kind)
+                    }
                 }
             }
         }

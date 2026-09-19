@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="socle_compte_titre">Votre compte Symbifox</string>
+    <string name="socle_compte_autre">Un autre serveur</string>
+    <string name="socle_compte_revenir">Revenir à mon compte Symbifox</string>
+</resources>

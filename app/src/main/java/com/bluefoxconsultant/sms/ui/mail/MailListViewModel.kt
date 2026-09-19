@@ -3,6 +3,7 @@ package com.bluefoxconsultant.sms.ui.mail
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bluefoxconsultant.sms.data.Graph
@@ -12,18 +13,67 @@ import com.bluefoxconsultant.sms.data.MailDraft
 import com.bluefoxconsultant.sms.data.MailFilter
 import com.bluefoxconsultant.sms.data.MailMessage
 import com.bluefoxconsultant.sms.data.PendingAction
+import com.bluefoxconsultant.sms.data.ScheduledMail
+import com.bluefoxconsultant.sms.data.ServerDraft
+import com.bluefoxconsultant.sms.data.Service
 import com.bluefoxconsultant.sms.data.isOffline
+import com.bluefoxconsultant.sms.data.pastilleCourriel
+import com.bluefoxconsultant.sms.ui.Sequenceur
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.annotation.PluralsRes
+import androidx.annotation.StringRes
+import com.bluefoxconsultant.sms.R
+import com.bluefoxconsultant.sms.ui.UiText
+import com.bluefoxconsultant.sms.ui.uiPlural
+import com.bluefoxconsultant.sms.ui.uiText
 
 private const val PAGE = 25
 
 /** Durée de vie d'une pierre tombale — le temps que le serveur rattrape. */
 private const val TOMBSTONE_MS = 60_000L
 
+/**
+ * Ce à quoi une lecture de la liste correspond, pris au LANCEMENT.
+ *
+ * 🔴 Q-M6 (audit du 2026-09-08) : la page lue s'enregistrait en cache sous le
+ * filtre et la recherche COURANTS à l'arrivée de la réponse, pas sous ceux de
+ * la requête. Changer de boîte pendant la lecture rangeait « Traités » dans le
+ * fichier de la réception, et c'est ce que l'app rouvrait hors ligne.
+ *
+ * [compte] est le jeton du courriel au lancement : une page lue pour une
+ * session ne doit pas entrer dans le cache de la suivante (le cache est vidé à
+ * la déconnexion, une réponse en retard le remplirait de nouveau).
+ *
+ * [boite] est le compte courriel filtré (#25734), `null` pour toutes.
+ */
+internal data class CleListe(
+    val filtre: MailFilter,
+    val recherche: String,
+    val groupe: Boolean,
+    val compte: String?,
+    val boite: Int? = null,
+) {
+    /**
+     * Seule la première page d'une section, sans recherche ni filtre de boîte,
+     * se reconstruit hors ligne : le cache est rangé par section, et une page
+     * filtrée y prendrait la place de la liste complète.
+     */
+    val enCache: Boolean get() = recherche.isBlank() && boite == null && compte != null
+}
+
 class MailListViewModel : ViewModel() {
+
+    /**
+     * Voir `Sequenceur` : la dernière lecture de la liste lancée est la seule
+     * qui écrit, et [lectureCompteurs] fait de même pour les pastilles.
+     * ⚠️ Déclarés AVANT `init`, qui lance la première lecture.
+     */
+    private val lecture = Sequenceur()
+    private val lectureCompteurs = Sequenceur()
 
     var threads by mutableStateOf<List<MailMessage>>(emptyList())
         private set
@@ -33,6 +83,10 @@ class MailListViewModel : ViewModel() {
         private set
     var filter by mutableStateOf(MailFilter.INBOX)
         private set
+
+    /** La boîte filtrée (#25734), `null` pour toutes. */
+    var accountId by mutableStateOf<Int?>(null)
+        private set
     var refreshing by mutableStateOf(false)
         private set
     var loadingMore by mutableStateOf(false)
@@ -41,9 +95,11 @@ class MailListViewModel : ViewModel() {
         private set
     var firstLoadDone by mutableStateOf(false)
         private set
-    var error by mutableStateOf<String?>(null)
+    // Des [UiText] et non des phrases : l'écran les rédige dans la langue du
+    // téléphone au moment de les montrer.
+    var error by mutableStateOf<UiText?>(null)
         private set
-    var notice by mutableStateOf<String?>(null)
+    var notice by mutableStateOf<UiText?>(null)
         private set
 
     /**
@@ -57,7 +113,7 @@ class MailListViewModel : ViewModel() {
      */
     var undoable by mutableStateOf<(() -> Unit)?>(null)
         private set
-    var undoLabel by mutableStateOf<String?>(null)
+    var undoLabel by mutableStateOf<UiText?>(null)
         private set
 
     /** Showing cached data because the server could not be reached. */
@@ -76,6 +132,31 @@ class MailListViewModel : ViewModel() {
      * n'ont aucun sens sur un texte que personne n'a encore reçu.
      */
     val drafts: StateFlow<List<MailDraft>> = Graph.drafts.drafts
+
+    /**
+     * Les brouillons écrits AU POSTE, dans bf_email (#25579).
+     *
+     * Deuxième pile, dans la même section : celle-ci vient du serveur, elle
+     * n'est donc pas un `StateFlow` du magasin local mais un état relu à
+     * chaque ouverture de la section. Rien ne fusionne les deux listes — un
+     * brouillon appartient au bord où il a été écrit, et les mêler
+     * demanderait de trancher des conflits que personne n'a demandés.
+     */
+    var serverDrafts by mutableStateOf<List<ServerDraft>>(emptyList())
+        private set
+    var serverDraftsLoading by mutableStateOf(false)
+        private set
+    /** Renseigné quand le serveur n'a pas répondu : la section le dit. */
+    var serverDraftsError by mutableStateOf<UiText?>(null)
+        private set
+
+    /**
+     * Les envois programmés qui ne sont pas encore partis (#25764). Relus avec
+     * les brouillons du poste, dans la même section : c'est là qu'on cherche un
+     * message qu'on a écrit et qui n'est pas encore chez son destinataire.
+     */
+    var scheduled by mutableStateOf<List<ScheduledMail>>(emptyList())
+        private set
 
     var searchActive by mutableStateOf(false)
         private set
@@ -101,7 +182,13 @@ class MailListViewModel : ViewModel() {
     private val tombstones = mutableMapOf<String, Long>()
 
     init {
-        queued = Graph.outbox.size
+        // Chaque geste qui rend des compteurs (lire, traiter, reporter) met la
+        // pastille de l'onglet à jour du même coup : on observe la valeur
+        // plutôt que d'instrumenter ses huit points d'écriture.
+        viewModelScope.launch {
+            snapshotFlow { counts }.collect { Graph.badges.poserCourriel(pastilleCourriel(it)) }
+        }
+        queued = Graph.outbox.enAttenteVisible()
         loadConfig()
         refresh()
     }
@@ -124,13 +211,13 @@ class MailListViewModel : ViewModel() {
     }
 
     /** Ce que le serveur rend, moins ce que l'utilisateur a déjà retiré. */
-    private fun visible(rows: List<MailMessage>): List<MailMessage> {
+    private fun visible(rows: List<MailMessage>, filtre: MailFilter = filter): List<MailMessage> {
         val now = System.currentTimeMillis()
         tombstones.entries.removeAll { it.value <= now }
         // Même si la file a échoué, la liste ne doit pas contredire le geste :
         // tout ce qui reste en attente demeure caché.
         val queuedIds = Graph.outbox.peek().flatMap { it.emailIds }.toSet()
-        val prefix = "${filter.name}:"
+        val prefix = "${filtre.name}:"
         return rows.filterNot {
             it.id in queuedIds || tombstones.containsKey(prefix + it.threadKey)
         }
@@ -183,74 +270,119 @@ class MailListViewModel : ViewModel() {
      * mal, et la liste, elle, a son propre message d'erreur.
      */
     private fun loadCounts() {
-        viewModelScope.launch {
-            runCatching { Graph.mail.counts(grouped) }.onSuccess { counts = it }
+        val groupe = grouped
+        lectureCompteurs.lancer(viewModelScope) { n ->
+            val lus = try {
+                Graph.mail.counts(groupe)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                return@lancer
+            }
+            if (lectureCompteurs.estCourante(n)) counts = lus
         }
+    }
+
+    /**
+     * Les totaux qu'une mutation vient de rendre.
+     *
+     * Plus frais que toute lecture partie avant le geste : celle-ci est donc
+     * annulée, sinon elle reviendrait écraser le compte d'après avec celui
+     * d'avant.
+     */
+    private fun poserCompteurs(frais: MailCounts) {
+        lectureCompteurs.annuler()
+        counts = frais
     }
 
     fun refresh() {
         // Les brouillons sont déjà là : rien à demander, et le demander ferait
         // répondre « Filtre inconnu » au serveur.
         if (filter == MailFilter.DRAFTS) {
+            // Ceux de l'appareil sont déjà là ; ceux du poste se demandent.
+            // Le filtre lui-même ne part toujours PAS au serveur : /threads
+            // n'en connaît pas la clé et répondrait « Filtre inconnu ».
+            // Une lecture d'une autre boîte encore en vol n'a plus rien à
+            // écrire ici.
+            lecture.annuler()
             firstLoadDone = true
             refreshing = false
             hasMore = false
             error = null
+            refreshServerDrafts()
             return
         }
-        viewModelScope.launch {
-            refreshing = true
-            error = null
-            // AWAITED, not fired alongside: launching the flush in its own
-            // coroutine let the re-fetch overtake it, so the server answered
-            // with the state from before the queued action and the row
-            // reappeared — then vanished again once the flush landed.
-            flushQueue()
-            // Lancés ensemble : les totaux ne dépendent pas de la page, et
-            // les enchaîner ajouterait un aller-retour au geste le plus
-            // fréquent de l'écran.
-            loadCounts()
+        // Posés HORS de la coroutine, comme ailleurs : voir `AgendaViewModel.charger`.
+        refreshing = true
+        error = null
+        val cle = CleListe(filter, searchTerm, grouped, Graph.tokenStore.tokenFor(Service.MAIL), accountId)
+        lecture.lancer(viewModelScope) { n ->
             try {
+                // AWAITED, not fired alongside: launching the flush in its own
+                // coroutine let the re-fetch overtake it, so the server answered
+                // with the state from before the queued action and the row
+                // reappeared — then vanished again once the flush landed.
+                flushQueue()
+                // Lancés ensemble : les totaux ne dépendent pas de la page, et
+                // les enchaîner ajouterait un aller-retour au geste le plus
+                // fréquent de l'écran.
+                loadCounts()
                 val resp = Graph.mail.threads(
-                    filter = filter,
-                    search = searchTerm,
+                    filter = cle.filtre,
+                    search = cle.recherche,
+                    accountId = cle.boite,
                     offset = 0,
                     limit = PAGE,
-                    grouped = grouped,
+                    grouped = cle.groupe,
                 )
-                threads = visible(resp.threads)
+                // Une réponse dépassée n'écrit RIEN, cache compris : une
+                // relecture plus récente de la même boîte a pu arriver avant
+                // elle, et la remplacerait par plus vieux qu'elle.
+                if (!lecture.estCourante(n)) return@lancer
+                threads = visible(resp.threads, cle.filtre)
                 hasMore = resp.hasMore
                 offline = false
                 // Only the plain first page is worth caching; a search result
                 // or a later page can't be reconstructed coherently offline.
-                if (searchTerm.isBlank()) Graph.mailCache.saveThreads(filter, resp)
+                // Sous la clé du LANCEMENT, pas sous l'état courant, et pas si
+                // la session a changé pendant la lecture.
+                if (cle.enCache && Graph.tokenStore.tokenFor(Service.MAIL) == cle.compte) {
+                    Graph.mailCache.saveThreads(cle.filtre, resp)
+                }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
+                if (!lecture.estCourante(n)) return@lancer
                 if (e.isOffline()) {
-                    val cached = if (searchTerm.isBlank())
-                        Graph.mailCache.loadThreads(filter) else null
+                    val cached = if (cle.enCache) Graph.mailCache.loadThreads(cle.filtre) else null
                     if (cached != null) {
-                        threads = visible(cached.threads)
+                        threads = visible(cached.threads, cle.filtre)
                         // No paging offline: the next page isn't on this device.
                         hasMore = false
                         offline = true
                     } else {
-                        error = "Hors ligne, et rien en cache pour « ${filter.label} »."
+                        error = uiText(R.string.mail_list_offline_no_cache, uiText(cle.filtre.labelRes))
                     }
                 } else {
-                    error = "Impossible de charger les courriels."
+                    error = uiText(R.string.mail_list_load_failed)
                 }
             } finally {
-                refreshing = false
-                firstLoadDone = true
+                if (lecture.estCourante(n)) {
+                    refreshing = false
+                    firstLoadDone = true
+                }
             }
         }
     }
 
     /** Replay queued actions; surface anything the server refused outright. */
     private suspend fun flushQueue() {
-        runCatching { Graph.outbox.flush { Graph.mail.replay(it) } }
+        // Par les envois différés et non par la file directement : un envoi
+        // refusé doit redevenir un brouillon, quel que soit le chemin qui l'a
+        // fait partir (#25764).
+        runCatching { Graph.envois.vider() }
         Graph.outbox.drainFailures().firstOrNull()?.let { error = it }
-        queued = Graph.outbox.size
+        queued = Graph.outbox.enAttenteVisible()
     }
 
     fun flushOutbox() {
@@ -259,34 +391,158 @@ class MailListViewModel : ViewModel() {
 
     /** Dit ce que le composeur ne peut plus dire lui-même : il a déjà quitté. */
     fun announceDraftSaved() {
-        notice = "Brouillon enregistré."
+        notice = uiText(R.string.mail_draft_saved)
+    }
+
+    fun announce(message: UiText) {
+        notice = message
     }
 
     fun deleteDraft(draft: MailDraft) {
         Graph.drafts.delete(draft.id)
     }
 
+    /**
+     * Relit les brouillons du poste.
+     *
+     * Silencieux quand l'instance ne sait pas les servir : `server_drafts`
+     * absent de `/config` veut dire « trop vieille », et la section doit
+     * alors se contenter des brouillons de l'appareil plutôt que d'afficher
+     * une erreur pour une fonction que personne n'attend là-bas.
+     */
+    fun refreshServerDrafts() {
+        if (!config.serverDrafts) {
+            serverDrafts = emptyList()
+            serverDraftsError = null
+            return
+        }
+        viewModelScope.launch {
+            serverDraftsLoading = true
+            // AVANT la relecture, comme le vidage de la file avant /threads :
+            // relire d'abord ferait afficher la version du poste juste avant
+            // que la remontée ne la remplace, et la ligne changerait sous les
+            // yeux sans que personne ait rien fait.
+            pushPendingDrafts()
+            if (config.composeurComplet) {
+                scheduled = runCatching { Graph.mail.scheduled(limit = PAGE).scheduled }
+                    .getOrDefault(scheduled)
+            }
+            try {
+                serverDrafts = Graph.mail.serverDrafts(limit = PAGE).drafts
+                serverDraftsError = null
+            } catch (e: Exception) {
+                // La liste locale reste affichée : ne pas la faire disparaître
+                // parce que l'autre moitié n'a pas répondu.
+                serverDraftsError = if (e.isOffline())
+                    uiText(R.string.mail_server_drafts_offline)
+                else uiText(R.string.mail_server_drafts_unavailable)
+            } finally {
+                serverDraftsLoading = false
+            }
+        }
+    }
+
+    /**
+     * Fait remonter au poste ce qui a été retouché au téléphone.
+     *
+     * ⚠️ Ceci est le vrai chemin d'écriture, pas un rattrapage. Le composeur
+     * écrit sur l'appareil au moment de quitter et s'arrête là : sa portée de
+     * coroutines meurt avec l'écran, et une écriture distante lancée en
+     * partant serait annulée en vol. La remontée a donc lieu ici, où plus rien
+     * ne peut l'interrompre, et se retente à chaque ouverture de la section
+     * tant qu'elle n'a pas abouti.
+     *
+     * Un conflit n'est pas une erreur à réessayer : la reprise locale reste en
+     * place, la personne rouvre le brouillon et tranche à l'écran.
+     */
+    private suspend fun pushPendingDrafts() {
+        var refuses = 0
+        for (pending in Graph.drafts.pendingPushes()) {
+            val issue = runCatching { pushServerDraft(pending) }.getOrNull() ?: continue
+            if (issue.conflict) {
+                refuses += 1
+            } else if (issue.ok) {
+                Graph.drafts.delete(pending.id)
+            }
+        }
+        if (refuses > 0) {
+            notice = uiPlural(R.plurals.mail_server_drafts_conflicts, refuses)
+        }
+    }
+
+    /**
+     * Retenir un envoi programmé : il redevient un brouillon du poste, où il
+     * s'ouvre, se corrige et se renvoie. Rien n'est effacé (#25764).
+     */
+    fun unschedule(envoi: ScheduledMail) {
+        val avant = scheduled
+        scheduled = scheduled.filterNot { it.id == envoi.id }
+        viewModelScope.launch {
+            try {
+                Graph.mail.unschedule(envoi.id)
+                notice = uiText(R.string.mail_scheduled_unscheduled)
+                refreshServerDrafts()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                scheduled = avant
+                error = if (e.isOffline()) uiText(R.string.mail_server_drafts_offline)
+                else e.message?.takeIf { it.isNotBlank() && it != "error" }?.let { UiText.Raw(it) }
+                    ?: uiText(R.string.mail_scheduled_unschedule_failed)
+            }
+        }
+    }
+
+    /**
+     * Jeter un brouillon du poste.
+     *
+     * Retiré de la liste tout de suite, remis si le serveur refuse : sur une
+     * liste courte, attendre l'aller-retour donne l'impression que le geste
+     * n'a pas pris.
+     */
+    fun deleteServerDraft(draft: ServerDraft) {
+        val avant = serverDrafts
+        serverDrafts = serverDrafts.filterNot { it.id == draft.id }
+        viewModelScope.launch {
+            try {
+                Graph.mail.deleteServerDraft(draft.id)
+                notice = uiText(R.string.mail_draft_deleted)
+            } catch (e: Exception) {
+                serverDrafts = avant
+                error = uiText(R.string.mail_delete_failed)
+            }
+        }
+    }
+
     fun loadMore() {
         if (filter == MailFilter.DRAFTS) return
         if (loadingMore || !hasMore || refreshing) return
+        // La page suivante appartient à la liste de CETTE lecture : si une
+        // relecture la remplace entre-temps, la suite n'a plus où s'accrocher.
+        val n = lecture.courant
+        val cle = CleListe(filter, searchTerm, grouped, null, accountId)
+        loadingMore = true
         viewModelScope.launch {
-            loadingMore = true
             try {
                 val resp = Graph.mail.threads(
-                    filter = filter,
-                    search = searchTerm,
+                    filter = cle.filtre,
+                    search = cle.recherche,
+                    accountId = cle.boite,
                     offset = threads.size,
                     limit = PAGE,
-                    grouped = grouped,
+                    grouped = cle.groupe,
                 )
+                if (!lecture.estCourante(n)) return@launch
                 // Guard against a page that overlaps: a message arriving between
                 // two requests shifts every later row down by one, which would
                 // otherwise duplicate the boundary thread.
                 val known = threads.mapTo(HashSet()) { it.threadKey }
-                threads = threads + visible(resp.threads).filterNot { it.threadKey in known }
+                threads = threads + visible(resp.threads, cle.filtre).filterNot { it.threadKey in known }
                 hasMore = resp.hasMore
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                hasMore = false
+                if (lecture.estCourante(n)) hasMore = false
             } finally {
                 loadingMore = false
             }
@@ -296,6 +552,16 @@ class MailListViewModel : ViewModel() {
     fun selectFilter(next: MailFilter) {
         if (filter == next) return
         filter = next
+        threads = emptyList()
+        refresh()
+    }
+
+    /**
+     * Ne montrer qu'une boîte, ou toutes (`null`). Toucher la boîte déjà
+     * choisie revient à toutes : c'est le geste qu'on attend d'une pastille.
+     */
+    fun selectAccount(next: Int?) {
+        accountId = if (next == accountId) null else next
         threads = emptyList()
         refresh()
     }
@@ -331,7 +597,7 @@ class MailListViewModel : ViewModel() {
         undoLabel = null
     }
 
-    private fun offerUndo(label: String, action: () -> Unit) {
+    private fun offerUndo(label: UiText, action: () -> Unit) {
         undoLabel = label
         undoable = action
     }
@@ -339,16 +605,16 @@ class MailListViewModel : ViewModel() {
     fun archive(message: MailMessage) {
         hide(message)
         threads = threads.filterNot { it.threadKey == message.threadKey }
-        offerUndo("Archivé") { restore(message) }
+        offerUndo(uiText(R.string.mail_archived)) { restore(message) }
         viewModelScope.launch {
             try {
-                counts = Graph.mail.setHandled(listOf(message.id), handled = true, grouped = grouped)
+                poserCompteurs(Graph.mail.setHandled(listOf(message.id), handled = true, grouped = grouped))
             } catch (e: Exception) {
                 if (e.isOffline()) queueHandle(message, handled = true)
                 else {
                     // Refusé : la ligne doit revenir, donc la pierre tombale part.
                     unhide(message)
-                    error = "Archivage impossible."
+                    error = uiText(R.string.mail_archive_failed)
                     refresh()
                 }
             }
@@ -369,19 +635,19 @@ class MailListViewModel : ViewModel() {
                 handled = handled,
             ),
         )
-        queued = Graph.outbox.size
+        queued = Graph.outbox.enAttenteVisible()
         offline = true
-        notice = if (handled) "Archivage enregistré, envoi au retour du réseau."
-        else "Restauration enregistrée, envoi au retour du réseau."
+        notice = if (handled) uiText(R.string.mail_archive_queued)
+        else uiText(R.string.mail_restore_queued)
     }
 
     fun snooze(message: MailMessage, untilMs: Long) {
         hide(message)
         threads = threads.filterNot { it.threadKey == message.threadKey }
-        offerUndo("Reporté") { restore(message) }
+        offerUndo(uiText(R.string.mail_snoozed)) { restore(message) }
         viewModelScope.launch {
             try {
-                counts = Graph.mail.snooze(listOf(message.id), untilMs, grouped = grouped)
+                poserCompteurs(Graph.mail.snooze(listOf(message.id), untilMs, grouped = grouped))
             } catch (e: Exception) {
                 if (e.isOffline()) {
                     Graph.outbox.enqueue(
@@ -393,12 +659,12 @@ class MailListViewModel : ViewModel() {
                             untilMs = untilMs,
                         ),
                     )
-                    queued = Graph.outbox.size
+                    queued = Graph.outbox.enAttenteVisible()
                     offline = true
-                    notice = "Report enregistré, envoi au retour du réseau."
+                    notice = uiText(R.string.mail_snooze_queued)
                 } else {
                     unhide(message)
-                    error = "Report impossible."
+                    error = uiText(R.string.mail_snooze_failed)
                     refresh()
                 }
             }
@@ -418,13 +684,13 @@ class MailListViewModel : ViewModel() {
         threads = threads.filterNot { it.threadKey == message.threadKey }
         viewModelScope.launch {
             try {
-                counts = Graph.mail.setHandled(listOf(message.id), handled = false, grouped = grouped)
-                notice = "Remis en boîte de réception."
+                poserCompteurs(Graph.mail.setHandled(listOf(message.id), handled = false, grouped = grouped))
+                notice = uiText(R.string.mail_restored)
             } catch (e: Exception) {
                 if (e.isOffline()) queueHandle(message, handled = false)
                 else {
                     unhide(message)
-                    error = "Action impossible."
+                    error = uiText(R.string.mail_action_failed)
                     refresh()
                 }
             }
@@ -434,7 +700,7 @@ class MailListViewModel : ViewModel() {
     fun markRead(message: MailMessage) {
         viewModelScope.launch {
             try {
-                counts = Graph.mail.markRead(listOf(message.id), grouped = grouped)
+                poserCompteurs(Graph.mail.markRead(listOf(message.id), grouped = grouped))
                 threads = threads.map {
                     if (it.threadKey == message.threadKey) it.copy(status = "read", unreadCount = 0)
                     else it
@@ -449,7 +715,7 @@ class MailListViewModel : ViewModel() {
                             emailIds = listOf(message.id),
                         ),
                     )
-                    queued = Graph.outbox.size
+                    queued = Graph.outbox.enAttenteVisible()
                 }
             }
         }
@@ -459,10 +725,12 @@ class MailListViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 val resp = Graph.mail.spawn(message.id, kind)
-                notice = resp.record?.let { "Créé : ${it.name}" } ?: "Créé."
+                notice = resp.record?.let { uiText(R.string.mail_created_record, it.name) }
+                    ?: uiText(R.string.mail_created)
                 refresh()
             } catch (e: Exception) {
-                error = e.message ?: "Création impossible."
+                // Le message d'une ApiException est celui du serveur : tel quel.
+                error = e.message?.let { UiText.Raw(it) } ?: uiText(R.string.mail_create_failed)
             }
         }
     }
@@ -471,10 +739,11 @@ class MailListViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 val resp = Graph.mail.route(message.id, model, recordId)
-                notice = resp.record?.let { "Importé dans ${it.name}" } ?: "Importé."
+                notice = resp.record?.let { uiText(R.string.mail_routed_record, it.name) }
+                    ?: uiText(R.string.mail_routed)
                 refresh()
             } catch (e: Exception) {
-                error = e.message ?: "Routage impossible."
+                error = e.message?.let { UiText.Raw(it) } ?: uiText(R.string.mail_route_failed)
             }
         }
     }
@@ -525,7 +794,7 @@ class MailListViewModel : ViewModel() {
     private fun applyToSelection(
         targets: List<MailMessage>,
         removeRows: Boolean,
-        errorText: String,
+        errorText: UiText,
         pending: PendingAction,
         call: suspend (List<Int>) -> MailCounts,
     ) {
@@ -536,13 +805,13 @@ class MailListViewModel : ViewModel() {
         }
         viewModelScope.launch {
             try {
-                counts = call(targets.map { it.id })
+                poserCompteurs(call(targets.map { it.id }))
             } catch (e: Exception) {
                 if (e.isOffline()) {
                     Graph.outbox.enqueue(pending)
-                    queued = Graph.outbox.size
+                    queued = Graph.outbox.enAttenteVisible()
                     offline = true
-                    notice = "Action enregistrée, envoi au retour du réseau."
+                    notice = uiText(R.string.mail_action_queued)
                 } else {
                     targets.forEach { unhide(it) }
                     error = errorText
@@ -552,18 +821,24 @@ class MailListViewModel : ViewModel() {
         }
     }
 
-    private fun plural(n: Int, one: String, many: String) =
-        if (n == 1) one else "$n $many"
+    /**
+     * Le cas d'un seul garde sa phrase sans chiffre (« Archivé ») ; au-delà, un
+     * `<plurals>` qui porte le compte.
+     */
+    private fun plural(n: Int, @StringRes one: Int, @PluralsRes many: Int): UiText =
+        if (n == 1) uiText(one) else uiPlural(many, n)
 
     fun archiveSelected() {
         val targets = selectedMessages
         if (targets.isEmpty()) return
         clearSelection()
-        offerUndo(plural(targets.size, "Archivé", "archivés")) { restoreMany(targets) }
+        offerUndo(plural(targets.size, R.string.mail_archived, R.plurals.mail_archived_count)) {
+            restoreMany(targets)
+        }
         applyToSelection(
             targets = targets,
             removeRows = true,
-            errorText = "Archivage impossible.",
+            errorText = uiText(R.string.mail_archive_failed),
             pending = PendingAction(
                 token = PendingAction.newToken(),
                 kind = PendingAction.KIND_HANDLE,
@@ -593,10 +868,9 @@ class MailListViewModel : ViewModel() {
         threads = threads.filterNot { it.threadKey in keys }
         viewModelScope.launch {
             try {
-                counts = Graph.mail.setHandled(
-                    targets.map { it.id }, handled = false, grouped = grouped)
-                notice = plural(targets.size, "Remis en boîte de réception.",
-                    "courriels remis en boîte de réception.")
+                poserCompteurs(Graph.mail.setHandled(
+                    targets.map { it.id }, handled = false, grouped = grouped))
+                notice = plural(targets.size, R.string.mail_restored, R.plurals.mail_restored_count)
             } catch (e: Exception) {
                 if (e.isOffline()) {
                     Graph.outbox.enqueue(
@@ -608,12 +882,12 @@ class MailListViewModel : ViewModel() {
                             handled = false,
                         ),
                     )
-                    queued = Graph.outbox.size
+                    queued = Graph.outbox.enAttenteVisible()
                     offline = true
-                    notice = "Restauration enregistrée, envoi au retour du réseau."
+                    notice = uiText(R.string.mail_restore_queued)
                 } else {
                     targets.forEach { unhide(it) }
-                    error = "Action impossible."
+                    error = uiText(R.string.mail_action_failed)
                     refresh()
                 }
             }
@@ -633,7 +907,7 @@ class MailListViewModel : ViewModel() {
         applyToSelection(
             targets = targets,
             removeRows = false,
-            errorText = "Action impossible.",
+            errorText = uiText(R.string.mail_action_failed),
             pending = PendingAction(
                 token = PendingAction.newToken(),
                 kind = PendingAction.KIND_MARK_READ,
@@ -647,11 +921,13 @@ class MailListViewModel : ViewModel() {
         val targets = selectedMessages
         if (targets.isEmpty()) return
         clearSelection()
-        offerUndo(plural(targets.size, "Reporté", "reportés")) { restoreMany(targets) }
+        offerUndo(plural(targets.size, R.string.mail_snoozed, R.plurals.mail_snoozed_count)) {
+            restoreMany(targets)
+        }
         applyToSelection(
             targets = targets,
             removeRows = true,
-            errorText = "Report impossible.",
+            errorText = uiText(R.string.mail_snooze_failed),
             pending = PendingAction(
                 token = PendingAction.newToken(),
                 kind = PendingAction.KIND_SNOOZE,

@@ -72,6 +72,11 @@ import com.bluefoxconsultant.sms.ui.clockTime
 import com.bluefoxconsultant.sms.ui.relativeTime
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
 import kotlinx.coroutines.launch
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import com.bluefoxconsultant.sms.R
+import com.bluefoxconsultant.sms.ui.asString
+import com.bluefoxconsultant.sms.ui.resolve
 
 @Suppress("UNCHECKED_CAST")
 private class ThreadVmFactory(private val threadKey: String) : ViewModelProvider.Factory {
@@ -101,7 +106,7 @@ fun MailThreadScreen(
         scope.launch {
             val result = AttachmentOpener.open(context, message.id, attachment)
             if (result is AttachmentOpener.Result.Failed) {
-                snackbar.showSnackbar(result.message)
+                snackbar.showSnackbar(result.message.resolve(context))
             }
         }
     }
@@ -109,12 +114,13 @@ fun MailThreadScreen(
     LaunchedEffect(vm.notice, vm.error) {
         val message = vm.error ?: vm.notice
         if (message != null) {
-            snackbar.showSnackbar(message)
+            snackbar.showSnackbar(message.resolve(context))
             vm.dismissNotice()
         }
     }
 
     val last = vm.messages.lastOrNull()
+    val sansObjet = stringResource(R.string.common_no_subject)
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -122,7 +128,7 @@ fun MailThreadScreen(
             TopAppBar(
                 title = {
                     Text(
-                        vm.subject.ifBlank { "(sans objet)" },
+                        vm.subject.ifBlank { sansObjet },
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         fontWeight = FontWeight.SemiBold,
@@ -130,7 +136,10 @@ fun MailThreadScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.common_back),
+                        )
                     }
                 },
                 actions = {
@@ -156,12 +165,12 @@ fun MailThreadScreen(
                                         QuickAction.TASK -> Icons.AutoMirrored.Filled.PlaylistAdd
                                         QuickAction.SNOOZE -> Icons.Filled.Schedule
                                     },
-                                    contentDescription = action.label,
+                                    contentDescription = stringResource(action.labelRes),
                                 )
                             }
                         }
                         IconButton(onClick = { sheetFor = last }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = "Options")
+                            Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.common_options))
                         }
                     }
                 },
@@ -188,7 +197,7 @@ fun MailThreadScreen(
                     contentPadding = PaddingValues(bottom = 24.dp),
                 ) {
                     if (vm.offline) {
-                        item { InfoBanner("Hors ligne — version en cache de ce fil.") }
+                        item { InfoBanner(stringResource(R.string.mail_thread_offline_cached)) }
                     }
                     if (vm.truncated) {
                         item { TruncatedBanner() }
@@ -253,7 +262,7 @@ private fun InfoBanner(text: String) {
 @Composable
 private fun TruncatedBanner() {
     Text(
-        text = "Fil long : seuls les messages les plus récents sont affichés.",
+        text = stringResource(R.string.mail_thread_truncated),
         fontSize = 12.sp,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier
@@ -283,7 +292,7 @@ private fun MessageCard(
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = message.correspondent,
+                        text = message.correspondent.asString(),
                         fontWeight = if (message.isUnread) FontWeight.Bold else FontWeight.SemiBold,
                         fontSize = 15.sp,
                         maxLines = 1,
@@ -298,8 +307,11 @@ private fun MessageCard(
                     )
                 }
                 Text(
-                    text = if (message.isOutgoing) "à ${message.to.ifBlank { "…" }}"
-                    else relativeTime(message.dateMs),
+                    text = if (message.isOutgoing) {
+                        stringResource(R.string.mail_thread_to, message.to.ifBlank { "…" })
+                    } else {
+                        relativeTime(message.dateMs)
+                    },
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -361,13 +373,12 @@ private fun BlockedImagesBar(count: Int, onLoad: () -> Unit) {
             )
             Spacer(Modifier.width(8.dp))
             Text(
-                text = if (count == 1) "1 image distante bloquée"
-                else "$count images distantes bloquées",
+                text = pluralStringResource(R.plurals.mail_thread_blocked_images, count, count),
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        TextButton(onClick = onLoad) { Text("Afficher", fontSize = 12.sp) }
+        TextButton(onClick = onLoad) { Text(stringResource(R.string.mail_thread_show_images), fontSize = 12.sp) }
     }
 }
 
@@ -410,10 +421,12 @@ private fun AttachmentList(
     }
 }
 
+/** Les unités se traduisent aussi : « Mo » en français, « MB » en anglais. */
+@Composable
 private fun humanSize(bytes: Long): String = when {
-    bytes >= 1_048_576 -> "%.1f Mo".format(bytes / 1_048_576.0)
-    bytes >= 1024 -> "%d ko".format(bytes / 1024)
-    else -> "$bytes o"
+    bytes >= 1_048_576 -> stringResource(R.string.size_megabytes, bytes / 1_048_576.0)
+    bytes >= 1024 -> stringResource(R.string.size_kilobytes, bytes / 1024)
+    else -> stringResource(R.string.size_bytes, bytes)
 }
 
 @Composable
@@ -426,9 +439,11 @@ private fun ReplyBar(onPick: (String) -> Unit) {
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ReplyButton(Icons.AutoMirrored.Filled.Reply, "Répondre") { onPick("reply") }
-        ReplyButton(Icons.AutoMirrored.Filled.ReplyAll, "À tous") { onPick("reply_all") }
-        ReplyButton(Icons.AutoMirrored.Filled.Forward, "Transférer") { onPick("forward") }
+        ReplyButton(Icons.AutoMirrored.Filled.Reply, stringResource(R.string.mail_reply)) { onPick("reply") }
+        ReplyButton(Icons.AutoMirrored.Filled.ReplyAll, stringResource(R.string.mail_thread_reply_all_short)) {
+            onPick("reply_all")
+        }
+        ReplyButton(Icons.AutoMirrored.Filled.Forward, stringResource(R.string.mail_forward)) { onPick("forward") }
     }
 }
 

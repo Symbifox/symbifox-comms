@@ -1,0 +1,11 @@
+* Courriel : chaque boîte a sa couleur, celle de son avis au bureau, en liseré
+  dans la liste et en pastille au-dessus. Touchez une pastille pour ne voir que
+  cette boîte ; les totaux des sections la suivent
+* Gen : plusieurs conversations à la fois. Une conversation neuve, ou une
+  autre, se pose pendant que Gen répond ailleurs ; la liste montre celles qui
+  travaillent, et la notification ouvre celle qui a répondu
+* Gen : un bouton Arrêter pendant qu'il réfléchit. Ce qui était déjà écrit reste
+* Tâches : annuler une tâche, pas seulement la marquer faite, avec de quoi la
+  rétablir
+* Tâches : un champ de recherche, dans toutes vos tâches ouvertes quelle que
+  soit l'échéance : titre, projet, client, étiquette ou numéro de la tâche

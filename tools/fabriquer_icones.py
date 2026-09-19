@@ -1,89 +1,132 @@
 #!/usr/bin/env python3
-"""Fabrique les icônes du lanceur à partir de l'illustration d'origine.
+"""Fabrique les icônes de l'application à partir de l'illustration d'origine.
 
-    /home/livv/tentaclaude/.venv/bin/python tools/fabriquer_icones.py
+    python3 tools/fabriquer_icones.py [--play] [--fdroid]
 
-Deux couches sortent de la même image, et elles ne servent pas à la même chose.
+Même script dans toutes les applications Symbifox (BF #25719) : seules les
+constantes du haut changent d'un dépôt à l'autre. Les applications de la famille
+doivent se reconnaître dans un tiroir, et une illustration cadrée autrement que
+sa voisine se lit comme une erreur.
 
-* `ic_launcher_foreground.png`, la couche AVANT de l'icône adaptative, sur une
-  toile de 108 dp dont seuls les **66 dp du centre** sont sûrs. ⚠️ Le lanceur
-  découpe le reste, et il le découpe différemment selon l'appareil : tout ce qui
-  déborde de la zone sûre est un pari. Le cadrage reprend au dixième de pour
-  cent celui de l'icône précédente (61,1 % de la toile, centrée), mesuré sur ses
-  fichiers : les applications de la famille doivent se reconnaître dans un
-  tiroir, et une illustration plus grosse que sa voisine se lit comme une
-  erreur.
+🔴 **Un fond transparent est impossible au lanceur.** `AdaptiveIconDrawable.draw()`
+d'AOSP peint du NOIR avant de poser les couches : un `<background>` transparent
+sort en disque noir. Et une icône NON adaptative se fait poser un disque blanc
+par le lanceur, et rétrécir dedans. D'où un fond, choisi par Olivier le
+2026-09-14 : le bleu très pâle `@color/fond_lanceur` (#EAF6FC), une teinte à
+10 % du bleu Blue Fox. Vérifié sur le lanceur Pixel, thèmes clair et sombre.
 
-* `ic_launcher_monochrome.png`, la couche des icônes thématiques d'Android 13+.
-  🔴 Le système la TEINTE lui-même : seule l'alpha compte, la couleur est
-  jetée. Une illustration en dégradés n'y est pas réductible, il faut une
-  silhouette. On prend donc la découpe de la mallette, dont on ÔTE tout ce qui
-  n'est pas le bleu du boîtier — la marque et la ferrure — pour que le renard
-  s'y lise en creux. Sans ce retrait, l'icône thématique serait une tache
-  pleine.
+Ce qui sort :
 
-⚠️ Le fond de l'icône adaptative n'est PAS ici : c'est `@color/ic_launcher_background`,
-l'anthracite Blue Fox, et il reste tel quel. L'illustration est transparente sur
-ses bords, donc c'est lui qu'on voit autour de la mallette.
+* `<COUCHE_AVANT>.png`, la couche avant de l'icône adaptative, aux cinq
+  densités, sur une toile de 108 dp. Elle sert aussi de couche monochrome, sauf
+  si `COUCHE_MONOCHROME` est nommée (Symbifox Mobile, voir `silhouette`).
+  ⚠️ L'illustration est ajustée par son RAYON, pas par sa boîte : le pixel
+  opaque le plus éloigné du centre tombe à 35 dp, juste en dedans du disque de
+  36 dp que découpe le lanceur rond. Ajuster la boîte à 72 dp rogne les coins
+  (la clé de Tokens, la carte de Compte, l'anneau de Pastilles) ; l'ajuster à la
+  zone sûre de 66 dp laisse les illustrations carrées plus petites que leurs
+  voisines.
+* `ic_launcher.png` (et `ic_launcher_round.png` si le dépôt en porte une),
+  l'icône héritée : le même disque pâle, pour les rares surfaces qui la lisent
+  encore (minSdk 26, le lanceur prend l'adaptative).
+* avec `--play`, l'icône 512 de Google Play dans `fastlane/` : carré opaque sur
+  le même fond, Play découpant lui-même ses coins arrondis. ⚠️ Sur demande
+  seulement : une fiche de boutique en préparation n'est pas forcément commitée.
+* avec `--fdroid`, l'icône de la fiche F-Droid, **transparente et pleine
+  taille** : le client F-Droid l'affiche telle quelle, rien n'y peint de fond.
+  🔴 C'est ce fichier-là, dans `fdroid-symbifox/metadata/`, que l'index publie,
+  PAS l'icône de l'APK.
 """
 
+import os
 import pathlib
+import re
+import sys
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 RACINE = pathlib.Path(__file__).resolve().parent.parent
 SOURCE = RACINE / "tools" / "icone_source.png"
 RES = RACINE / "app" / "src" / "main" / "res"
+FDROID = pathlib.Path(os.environ.get("FDROID_METADATA", "../fdroid-symbifox/metadata"))
 
-# 66 dp de zone sûre sur une toile de 108 dp. La valeur est écrite en clair
-# plutôt que déduite : c'est une contrainte d'Android, pas un choix de goût.
-PART_SURE = 66 / 108
+# Le nom de la couche avant dans CE dépôt.
+COUCHE_AVANT = "ic_launcher_foreground"
+# La couche des icônes thématiques, quand elle n'est pas la couche avant.
+COUCHE_MONOCHROME = "ic_launcher_monochrome"
 
-# Les cinq densités, en pixels pour 108 dp.
-DENSITES = {
-    "mdpi": 108,
-    "hdpi": 162,
-    "xhdpi": 216,
-    "xxhdpi": 324,
-    "xxxhdpi": 432,
-}
+# `@color/fond_lanceur`, recopié ici pour l'icône héritée et celle de Play.
+FOND = (0xEA, 0xF6, 0xFC, 255)
 
-# En dessous de ce seuil de SATURATION, un pixel n'appartient pas au bleu du
-# boîtier : c'est la marque claire, ou la ferrure argentée.
-#
-# ⚠️ Le premier essai coupait sur la LUMINOSITÉ, et ne retirait que 4,5 % de
-# l'image : le renard va du blanc au bleu pâle, donc l'essentiel restait
-# au-dessus du seuil et la couche thématique sortait en tache pleine. La
-# saturation sépare franchement les deux — mesurée sur l'illustration, le
-# boîtier est à 0,86 de médiane, et 16 % des pixels tombent sous 0,55.
+# Rayon du dessin dans le disque du lanceur, en dp (le disque en fait 36).
+RAYON_DP = 35
+# Part de la toile occupée par le dessin, pour Play (coins arrondis à 20 %) et
+# pour F-Droid (rien n'y découpe).
+PART_PLAY = 0.84
+PART_FDROID = 0.96
+
+# Sous cette opacité, un pixel ne compte pas dans le cadrage : ombres douces et
+# voiles presque invisibles décaleraient le dessin sans qu'on les voie.
+SEUIL_ALPHA = 32
+
+DENSITES = {"mdpi": 1, "hdpi": 1.5, "xhdpi": 2, "xxhdpi": 3, "xxxhdpi": 4}
+
+
+def charger() -> Image.Image:
+    """L'illustration, débarrassée de son voile quasi transparent.
+
+    ⚠️ L'illustration de SMS Relay traîne un carré d'opacité 6 sur 255 : invisible
+    à l'œil, mais il fausse la boîte, et il sortirait en carré gris sur un fond
+    clair une fois agrandi.
+    """
+    source = Image.open(SOURCE).convert("RGBA")
+    alpha = source.getchannel("A").point(lambda a: 0 if a <= 10 else a)
+    source.putalpha(alpha)
+    return source
+
+
+def mesurer(source: Image.Image):
+    """Boîte du dessin visible, et rayon du pixel le plus éloigné de son centre."""
+    masque = source.getchannel("A").point(lambda a: 255 if a >= SEUIL_ALPHA else 0)
+    boite = masque.getbbox()
+    if boite is None:
+        raise SystemExit("l'illustration est entièrement transparente")
+    x0, y0, x1, y1 = boite
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    donnees = masque.crop(boite).tobytes()
+    largeur = x1 - x0
+    rayon2 = 0.0
+    for i, a in enumerate(donnees):
+        if a:
+            x = x0 + i % largeur + 0.5
+            y = y0 + i // largeur + 0.5
+            rayon2 = max(rayon2, (x - cx) ** 2 + (y - cy) ** 2)
+    return boite, rayon2 ** 0.5
+
+
+def poser(dessin: Image.Image, facteur: float, toile: int, fond) -> Image.Image:
+    """Pose [dessin] réduit de [facteur], centré sur une toile carrée."""
+    taille = (max(1, round(dessin.width * facteur)), max(1, round(dessin.height * facteur)))
+    reduit = dessin.resize(taille, Image.LANCZOS)
+    sortie = Image.new("RGBA", (toile, toile), fond)
+    sortie.alpha_composite(reduit, ((toile - taille[0]) // 2, (toile - taille[1]) // 2))
+    return sortie
+
+
+# En dessous de ce seuil de SATURATION, un pixel de la couche monochrome est ôté.
 SEUIL_SATURATION = 0.55
 
 
-def recadrer(source: Image.Image) -> Image.Image:
-    """L'illustration, rognée sur son dessin et centrée dans sa zone sûre."""
-    boite = source.split()[3].getbbox()
-    if boite is None:
-        raise SystemExit("l'illustration est entièrement transparente")
-    return source.crop(boite)
-
-
-def poser(dessin: Image.Image, cote: int) -> Image.Image:
-    """Pose [dessin] au centre d'une toile de [cote], à l'échelle sûre."""
-    large = int(round(cote * PART_SURE))
-    facteur = large / dessin.width
-    taille = (large, max(1, int(round(dessin.height * facteur))))
-    reduit = dessin.resize(taille, Image.LANCZOS)
-    toile = Image.new("RGBA", (cote, cote), (0, 0, 0, 0))
-    toile.paste(
-        reduit,
-        ((cote - reduit.width) // 2, (cote - reduit.height) // 2),
-        reduit,
-    )
-    return toile
-
-
 def silhouette(couche: Image.Image) -> Image.Image:
-    """La couche thématique : noir opaque, marque claire ôtée."""
+    """La couche thématique d'Android 13+ : noir opaque, parties claires ôtées.
+
+    🔴 Le système TEINTE cette couche lui-même : seule l'alpha compte. Une
+    illustration en dégradés n'y est pas réductible, il faut une silhouette. Sur
+    la mallette de Symbifox Mobile, on ôte ce qui n'est pas le bleu du boîtier
+    (la marque, la ferrure) pour que le renard s'y lise en creux. ⚠️ Couper sur
+    la luminosité ne retirait que 4,5 % de l'image : le renard va du blanc au
+    bleu pâle. La saturation sépare franchement les deux.
+    """
     pixels = couche.load()
     sortie = Image.new("RGBA", couche.size, (0, 0, 0, 0))
     dessin = sortie.load()
@@ -92,24 +135,71 @@ def silhouette(couche: Image.Image) -> Image.Image:
             r, v, b, a = pixels[x, y]
             if a < 40:
                 continue
-            plus_haut = max(r, v, b)
-            saturation = 0.0 if plus_haut == 0 else (plus_haut - min(r, v, b)) / plus_haut
-            if saturation < SEUIL_SATURATION:
+            haut = max(r, v, b)
+            if haut == 0 or (haut - min(r, v, b)) / haut < SEUIL_SATURATION:
                 continue
             dessin[x, y] = (0, 0, 0, a)
     return sortie
 
 
+def disque(toile: int) -> Image.Image:
+    """Le disque pâle de l'icône héritée, lissé en le traçant quatre fois plus grand."""
+    grand = Image.new("L", (toile * 4, toile * 4), 0)
+    ImageDraw.Draw(grand).ellipse((0, 0, toile * 4 - 1, toile * 4 - 1), fill=255)
+    fond = Image.new("RGBA", (toile, toile), FOND)
+    fond.putalpha(grand.resize((toile, toile), Image.LANCZOS))
+    return fond
+
+
+def paquet() -> str:
+    gradle = (RACINE / "app" / "build.gradle.kts").read_text()
+    trouve = re.search(r'applicationId\s*=\s*"([^"]+)"', gradle)
+    if not trouve:
+        raise SystemExit("applicationId introuvable dans app/build.gradle.kts")
+    return trouve.group(1)
+
+
 def main() -> None:
-    source = Image.open(SOURCE).convert("RGBA")
-    dessin = recadrer(source)
-    for densite, cote in DENSITES.items():
-        dossier = RES / f"mipmap-{densite}"
+    source = charger()
+    boite, rayon = mesurer(source)
+    dessin = source.crop(boite)
+    cote = max(dessin.width, dessin.height)
+
+    for nom, echelle in DENSITES.items():
+        dossier = RES / f"mipmap-{nom}"
         dossier.mkdir(parents=True, exist_ok=True)
-        avant = poser(dessin, cote)
-        avant.save(dossier / "ic_launcher_foreground.png")
-        silhouette(avant).save(dossier / "ic_launcher_monochrome.png")
-        print(f"{densite:8s} {cote}px")
+
+        dp = echelle  # pixels par dp à cette densité (mdpi = 1)
+        avant = poser(dessin, RAYON_DP * dp / rayon, round(108 * dp), (0, 0, 0, 0))
+        avant.save(dossier / f"{COUCHE_AVANT}.png", optimize=True)
+        if COUCHE_MONOCHROME:
+            silhouette(avant).save(dossier / f"{COUCHE_MONOCHROME}.png", optimize=True)
+
+        toile = round(48 * dp)
+        heritee = disque(toile)
+        heritee.alpha_composite(poser(dessin, RAYON_DP / 36 * (toile / 2) / rayon, toile, (0, 0, 0, 0)))
+        heritee.save(dossier / "ic_launcher.png", optimize=True)
+        if (dossier / "ic_launcher_round.png").exists():
+            heritee.save(dossier / "ic_launcher_round.png", optimize=True)
+        print(f"mipmap-{nom} : avant {avant.width} px, héritée {toile} px")
+
+    fastlane = RACINE / "fastlane" / "metadata" / "android"
+    if "--play" in sys.argv:
+        if not fastlane.is_dir():
+            raise SystemExit(f"aucune fiche Google Play : {fastlane}")
+        play = poser(dessin, 512 * PART_PLAY / cote, 512, FOND).convert("RGB")
+        for langue in sorted(p.name for p in fastlane.iterdir() if p.is_dir()):
+            cible = fastlane / langue / "images" / "icon.png"
+            cible.parent.mkdir(parents=True, exist_ok=True)
+            play.save(cible, optimize=True)
+            print(f"Play {langue} : {cible}")
+
+    if "--fdroid" in sys.argv:
+        cible = FDROID / paquet() / "en-US" / "icon.png"
+        if not cible.parent.is_dir():
+            raise SystemExit(f"aucune fiche F-Droid pour ce paquet : {cible.parent}")
+        poser(dessin, 512 * PART_FDROID / cote, 512, (0, 0, 0, 0)).save(cible, optimize=True)
+        print(f"F-Droid : {cible}")
 
 
 if __name__ == "__main__":

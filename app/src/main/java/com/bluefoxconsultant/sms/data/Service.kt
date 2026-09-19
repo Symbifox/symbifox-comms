@@ -1,5 +1,8 @@
 package com.bluefoxconsultant.sms.data
 
+import androidx.annotation.StringRes
+import com.bluefoxconsultant.sms.R
+
 /**
  * The two Odoo modules this app speaks to.
  *
@@ -16,10 +19,11 @@ enum class Service(
     val apiPath: String,
     /** Suffix for this service's keys in [TokenStore]. */
     val key: String,
-    val label: String,
+    /** Le nom de l'onglet, dans la langue du téléphone. */
+    @StringRes val labelRes: Int,
 ) {
-    SMS("/bf_sms_archive/mobile/v1", "sms", "Messages"),
-    MAIL("/bf_email_management/mobile/v1", "mail", "Courriel"),
+    SMS("/bf_sms_archive/mobile/v1", "sms", R.string.service_messages),
+    MAIL("/bf_email_management/mobile/v1", "mail", R.string.service_mail),
     ;
 
     fun baseUrl(instance: String): String = instance.trimEnd('/') + apiPath

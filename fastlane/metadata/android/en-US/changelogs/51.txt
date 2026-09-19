@@ -1,0 +1,10 @@
+* Mail: each mailbox has its colour, the one its notice wears at the office,
+  as a stripe on the list and a chip above it. Tap a chip to see only that
+  mailbox; the section totals follow it
+* Gen: several conversations at once. A new conversation, or another one,
+  can be asked while Gen is still answering elsewhere; the conversation list
+  shows which ones are working, and a notification opens the one that answered
+* Gen: a Stop button while it thinks. It keeps what was already written
+* Tasks: cancel a task, not only mark it done, with a way to restore it
+* Tasks: a search field, across all your open tasks whatever their deadline:
+  title, project, client, tag, or the task number

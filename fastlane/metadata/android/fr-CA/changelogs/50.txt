@@ -1,0 +1,18 @@
+* Tâches : la liste se lit par jour — En retard, Aujourd'hui, un intertitre
+  pour chacun des sept jours qui viennent, puis Plus tard. Une tâche de ce
+  matin reste dans Aujourd'hui, et les tâches sans échéance passent en tête
+* Pastilles : le courriel compte les non-lus de la boîte de réception, et les
+  tâches comptent les retards avec les échéances du jour
+* Notifications : chiffrées de bout en bout entre votre instance et le
+  téléphone quand le serveur est à jour, et le service qui les livre se
+  choisit (Réglages, Notifications) plutôt que d'être pris d'office
+* Partage vers Comms : un fichier partagé est proposé, pas envoyé ; il ne part
+  qu'avec « Joindre » ou « Envoyer ». Les fichiers trop lourds sont refusés
+  avant d'être chargés
+* Sécurité : aucune session n'est plus jamais écrite en clair si le coffre de
+  clés d'Android refuse de s'ouvrir ; l'app le dit, et il faudra se reconnecter
+* Agenda : les pastilles d'échéances tombent sur le bon jour quand le fuseau du
+  compte diffère de celui du téléphone
+* Nouvelle icône, commune aux applications Symbifox : l'illustration pleine
+  taille sur un fond bleu très pâle, au lieu du disque noir
+* Langue : l'app suit celle du téléphone, en français ou en anglais

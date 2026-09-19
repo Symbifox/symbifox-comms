@@ -18,3 +18,9 @@ API_CONTRACT.md
 
 # Bâti par tools/build-jssip.sh, jamais à la main.
 tools/jssip/node_modules/
+
+# ⚠️ Le trousseau de DÉBOGAGE du conteneur de fabrication (posé par
+# `ANDROID_USER_HOME`). Il ne doit pas entrer au dépôt : c'est une clé, et deux
+# trousseaux différents rendent les APK non installables l'une sur l'autre
+# (« signatures do not match ») — BF #25765.
+.android-debug/

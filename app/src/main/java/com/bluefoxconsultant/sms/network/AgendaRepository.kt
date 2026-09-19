@@ -3,6 +3,8 @@ package com.bluefoxconsultant.sms.network
 import com.bluefoxconsultant.sms.data.AgendaCalendarsResponse
 import com.bluefoxconsultant.sms.data.AgendaConfig
 import com.bluefoxconsultant.sms.data.AgendaEvent
+import com.bluefoxconsultant.sms.data.AgendaPartnersResponse
+import com.bluefoxconsultant.sms.data.AgendaPartner
 import com.bluefoxconsultant.sms.data.AgendaEventResponse
 import com.bluefoxconsultant.sms.data.AgendaEventsResponse
 import com.bluefoxconsultant.sms.data.AgendaPing
@@ -10,6 +12,7 @@ import com.bluefoxconsultant.sms.data.AgendaTask
 import com.bluefoxconsultant.sms.data.AgendaTaskCounts
 import com.bluefoxconsultant.sms.data.AgendaTaskOptions
 import com.bluefoxconsultant.sms.data.AgendaTaskResponse
+import com.bluefoxconsultant.sms.data.AgendaTaskSearchResponse
 import com.bluefoxconsultant.sms.data.AgendaTasksResponse
 import com.bluefoxconsultant.sms.data.Service
 import com.bluefoxconsultant.sms.data.TokenStore
@@ -120,11 +123,23 @@ class AgendaRepository(
         )
     }
 
-    suspend fun taskCounts(from: Instant, to: Instant): AgendaTaskCounts =
+    /**
+     * Les échéances par jour, groupées dans [tz].
+     *
+     * ⚠️ Le fuseau part avec la requête (Q-M7) : sans lui le serveur groupe
+     * dans le fuseau du COMPTE, et une échéance à 20:00 à Montréal tombait le
+     * lendemain pour un compte réglé sur Auckland. Un serveur ancien ignore le
+     * paramètre et rend le fuseau qu'il a réellement utilisé : c'est à
+     * l'appelant de comparer (voir `compteursPourLaGrille`).
+     */
+    suspend fun taskCounts(from: Instant, to: Instant, tz: String): AgendaTaskCounts =
         withContext(Dispatchers.IO) {
             val client = api()
             client.json.decodeFromString(
-                client.get("/task_counts?from=${q(from)}&to=${q(to)}"),
+                client.get(
+                    "/task_counts?from=${q(from)}&to=${q(to)}" +
+                        "&tz=" + URLEncoder.encode(tz, "UTF-8"),
+                ),
             )
         }
 
@@ -209,6 +224,71 @@ class AgendaRepository(
             client.json.decodeFromString<AgendaEventResponse>(
                 client.postJson("/event/flags", corps),
             ).event
+        }.getOrNull()
+    }
+
+    // ── Participants ───────────────────────────────────────────────────
+
+    /** Qui inviter. Vide sous deux caractères : le serveur ne cherche pas. */
+    suspend fun partners(query: String): List<AgendaPartner> =
+        withContext(Dispatchers.IO) {
+            if (query.trim().length < 2) return@withContext emptyList()
+            val client = api()
+            runCatching {
+                client.json.decodeFromString<AgendaPartnersResponse>(
+                    client.get("/partners?q=" + URLEncoder.encode(query.trim(), "UTF-8")),
+                ).partners
+            }.getOrDefault(emptyList())
+        }
+
+    /**
+     * Ajoute et retire des participants. Rend la fiche complète telle que le
+     * serveur la voit, ou null si le geste a été refusé.
+     *
+     * ⚠️ [notify] est la seule porte par laquelle ce module fait partir un
+     * courriel ; fermée par défaut, et c'est la personne qui l'ouvre.
+     */
+    suspend fun setAttendees(
+        id: Int,
+        key: String,
+        add: List<Int> = emptyList(),
+        remove: List<Int> = emptyList(),
+        notify: Boolean = false,
+    ): AgendaEvent? = withContext(Dispatchers.IO) {
+        val client = api()
+        val corps = buildString {
+            append("{\"event_id\":").append(id)
+            append(",\"key\":").append(quote(key))
+            append(",\"add\":").append(add.joinToString(",", "[", "]"))
+            append(",\"remove\":").append(remove.joinToString(",", "[", "]"))
+            append(",\"notify\":").append(notify)
+            append("}")
+        }
+        runCatching {
+            client.json.decodeFromString<AgendaEventResponse>(
+                client.postJson("/event/attendees", corps),
+            ).event
+        }.getOrNull()
+    }
+
+    /**
+     * Mes tâches ouvertes qui répondent à [query], toutes échéances confondues
+     * (api 4). Lève en cas d'échec : l'écran doit distinguer « rien trouvé »
+     * de « pas pu chercher ».
+     */
+    suspend fun searchTasks(query: String): AgendaTaskSearchResponse =
+        withContext(Dispatchers.IO) {
+            val client = api()
+            client.json.decodeFromString(
+                client.get("/tasks/search?q=" + URLEncoder.encode(query.trim(), "UTF-8")),
+            )
+        }
+
+    /** Une tâche par identifiant, pour l'ouvrir depuis un courriel classé. */
+    suspend fun task(id: Int): AgendaTask? = withContext(Dispatchers.IO) {
+        val client = api()
+        runCatching {
+            client.json.decodeFromString<AgendaTaskResponse>(client.get("/task?id=$id")).task
         }.getOrNull()
     }
 

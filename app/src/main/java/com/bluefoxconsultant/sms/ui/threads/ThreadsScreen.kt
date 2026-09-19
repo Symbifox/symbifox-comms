@@ -61,6 +61,13 @@ import com.bluefoxconsultant.sms.data.SwipeAction
 import com.bluefoxconsultant.sms.ui.RelirePendantQuOnRegarde
 import com.bluefoxconsultant.sms.ui.SwipeActionRow
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
+import com.bluefoxconsultant.sms.ui.BoutonTheme
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.bluefoxconsultant.sms.R
+import com.bluefoxconsultant.sms.ui.UiText
+import com.bluefoxconsultant.sms.ui.asString
+import com.bluefoxconsultant.sms.ui.resolve
 
 @Composable
 fun ThreadsScreen(
@@ -73,6 +80,7 @@ fun ThreadsScreen(
     var menuOpen by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val swipe by Graph.uiPrefs.configFlow.collectAsState()
+    val context = LocalContext.current
 
     // Relire au retour sur l'onglet, au retour d'arrière-plan, puis à la
     // minute. La liste vivait de ses seules notifications poussées.
@@ -80,7 +88,7 @@ fun ThreadsScreen(
 
     LaunchedEffect(vm.error) {
         val message = vm.error ?: return@LaunchedEffect
-        snackbar.showSnackbar(message)
+        snackbar.showSnackbar(message.resolve(context))
         vm.dismissError()
     }
 
@@ -90,8 +98,8 @@ fun ThreadsScreen(
     LaunchedEffect(vm.undoable) {
         val undo = vm.undoable ?: return@LaunchedEffect
         val result = snackbar.showSnackbar(
-            message = vm.undoLabel,
-            actionLabel = "Annuler",
+            message = vm.undoLabel.resolve(context),
+            actionLabel = context.getString(R.string.common_undo),
             duration = SnackbarDuration.Short,
         )
         if (result == SnackbarResult.ActionPerformed) undo() else vm.clearUndo()
@@ -117,26 +125,27 @@ fun ThreadsScreen(
                 )
             } else {
                 TopAppBar(
-                    title = { Text("Messages", fontWeight = FontWeight.SemiBold) },
+                    title = { Text(stringResource(R.string.service_messages), fontWeight = FontWeight.SemiBold) },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = BrandAccent,
                         titleContentColor = Color.White,
                         actionIconContentColor = Color.White,
                     ),
                     actions = {
+                        BoutonTheme()
                         IconButton(onClick = { vm.openSearch() }) {
-                            Icon(Icons.Filled.Search, contentDescription = "Rechercher")
+                            Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.common_search))
                         }
                         IconButton(onClick = { menuOpen = true }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = "Options")
+                            Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.common_options))
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(
-                                text = { Text("Archivées") },
+                                text = { Text(stringResource(R.string.sms_archived_title)) },
                                 onClick = { menuOpen = false; onArchived() },
                             )
                             DropdownMenuItem(
-                                text = { Text("Paramètres") },
+                                text = { Text(stringResource(R.string.sms_threads_menu_settings)) },
                                 onClick = { menuOpen = false; onSettings() },
                             )
                         }
@@ -150,7 +159,7 @@ fun ThreadsScreen(
                 containerColor = BrandAccent,
                 contentColor = Color.White,
             ) {
-                Icon(Icons.Filled.Edit, contentDescription = "Nouveau message")
+                Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.common_new_message))
             }
         },
     ) { padding ->
@@ -197,9 +206,14 @@ fun ThreadsScreen(
                                     selected = thread.id in vm.selection,
                                     menuActions = listOf(
                                         ThreadAction(
-                                            if (thread.isPinned) "Désépingler" else "Épingler",
+                                            stringResource(
+                                                if (thread.isPinned) R.string.sms_threads_unpin
+                                                else R.string.sms_threads_pin,
+                                            ),
                                         ) { vm.togglePin(thread.id) },
-                                        ThreadAction("Archiver") { vm.archive(thread.id) },
+                                        ThreadAction(stringResource(R.string.common_archive)) {
+                                            vm.archive(thread.id)
+                                        },
                                     ),
                                 )
                             }
@@ -235,7 +249,7 @@ private fun ThreadSelectionBar(
         title = { Text("$count", fontWeight = FontWeight.SemiBold) },
         navigationIcon = {
             IconButton(onClick = onClose) {
-                Icon(Icons.Filled.Close, contentDescription = "Quitter la sélection")
+                Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.common_exit_selection))
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(
@@ -246,16 +260,18 @@ private fun ThreadSelectionBar(
         ),
         actions = {
             IconButton(onClick = onSelectAll) {
-                Icon(Icons.Filled.SelectAll, contentDescription = "Tout sélectionner")
+                Icon(Icons.Filled.SelectAll, contentDescription = stringResource(R.string.common_select_all))
             }
             IconButton(onClick = onPin) {
                 Icon(
                     Icons.Filled.PushPin,
-                    contentDescription = if (pinned) "Désépingler" else "Épingler",
+                    contentDescription = stringResource(
+                        if (pinned) R.string.sms_threads_unpin else R.string.sms_threads_pin,
+                    ),
                 )
             }
             IconButton(onClick = onArchive) {
-                Icon(Icons.Filled.Archive, contentDescription = "Archiver")
+                Icon(Icons.Filled.Archive, contentDescription = stringResource(R.string.common_archive))
             }
         },
     )
@@ -276,7 +292,7 @@ private fun LineFilterRow(
             FilterChip(
                 selected = selectedLineId == null,
                 onClick = { onSelect(null) },
-                label = { Text("Toutes les lignes") },
+                label = { Text(stringResource(R.string.sms_threads_all_lines)) },
             )
         }
         items(lines) { line ->
@@ -303,7 +319,7 @@ private fun SearchTopBar(
         ),
         navigationIcon = {
             IconButton(onClick = onClose) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Fermer")
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_close))
             }
         },
         title = {
@@ -311,7 +327,9 @@ private fun SearchTopBar(
             TextField(
                 value = term,
                 onValueChange = onChange,
-                placeholder = { Text("Rechercher", color = Color.White.copy(alpha = 0.7f)) },
+                placeholder = {
+                    Text(stringResource(R.string.common_search), color = Color.White.copy(alpha = 0.7f))
+                },
                 singleLine = true,
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Color.Transparent,
@@ -332,15 +350,15 @@ private fun SearchTopBar(
 }
 
 @Composable
-private fun EmptyOrError(error: String?, firstLoadDone: Boolean) {
+private fun EmptyOrError(error: UiText?, firstLoadDone: Boolean) {
     Column(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
         val message = when {
-            error != null -> error
-            firstLoadDone -> "Aucun message."
+            error != null -> error.asString()
+            firstLoadDone -> stringResource(R.string.sms_threads_empty)
             else -> ""
         }
         if (message.isNotBlank()) {

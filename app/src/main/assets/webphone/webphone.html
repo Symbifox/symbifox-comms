@@ -144,7 +144,8 @@
       ua.on("registered", function () { emit("status", { status: "registered" }); });
       ua.on("unregistered", function () { emit("status", { status: "offline" }); });
       ua.on("registrationFailed", function (e) {
-        emit("status", { status: "failed", cause: (e && e.cause) || "authentification" });
+        // Sans cause, l'app dit « authentification » dans sa propre langue.
+        emit("status", { status: "failed", cause: (e && e.cause) || "" });
       });
       ua.on("newRTCSession", function (e) {
         // Un seul appel à la fois : le PBX porte déjà la mise en attente, et
@@ -167,8 +168,9 @@
 
     /** Compose. Le PBX applique l'afficheur du poste : rien à passer ici. */
     call: function (number) {
-      if (!ua) { emit("error", { message: "Le poste n'est pas connecté." }); return false; }
-      if (session) { emit("error", { message: "Un appel est déjà en cours." }); return false; }
+      // Un code et pas une phrase : c'est l'app qui parle la langue du téléphone.
+      if (!ua) { emit("error", { code: "not_connected" }); return false; }
+      if (session) { emit("error", { code: "call_in_progress" }); return false; }
       var s = ua.call("sip:" + number + "@" + ua.configuration.uri.host, {
         mediaConstraints: { audio: true, video: false },
         pcConfig: pcConfig(window.__bfIce),

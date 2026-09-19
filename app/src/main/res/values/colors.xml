@@ -5,5 +5,22 @@
     <color name="bf_blue_dark">#1E86B4</color>
     <color name="bf_anthracite">#2D3031</color>
     <color name="white">#FFFFFF</color>
-    <color name="ic_launcher_background">#2D3031</color>
+    <!-- Fond de l'icône du lanceur, commun aux applications Symbifox (BF
+         #25719) : bleu très pâle, teinte à 10 % du bleu Blue Fox. -->
+    <color name="fond_lanceur">#EAF6FC</color>
+
+    <!-- Le fond de la FENÊTRE, celui du premier cadre — avant que Compose ait
+         peint quoi que ce soit.
+
+         🔴 **Il ne suit PAS `values-night`, et c'est propre à Comms.** Le thème
+         de cette application ne suit pas le mode du téléphone : son défaut est
+         SOMBRE par arbitrage (`ThemeMode.DEFAUT`), parce qu'on y consulte un
+         agenda au réveil et en rencontre. Un fond de fenêtre qui suivrait le
+         système ouvrirait donc une lisière CLAIRE au-dessus d'une application
+         peinte en sombre — c'est ce qu'on voyait, en blanc pur, avant #25765.
+
+         ⚠️ Revers assumé : qui choisit « Clair » dans les réglages voit un
+         premier cadre sombre. C'est un cadre, contre une lisière permanente
+         pour tous les autres. -->
+    <color name="fond_fenetre">#131921</color>
 </resources>

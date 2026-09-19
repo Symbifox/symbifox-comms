@@ -84,6 +84,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bluefoxconsultant.sms.data.CallLogEntry
 import com.bluefoxconsultant.sms.data.PhoneContact
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
+import com.bluefoxconsultant.sms.ui.BoutonTheme
+import androidx.compose.ui.res.stringResource
+import com.bluefoxconsultant.sms.R
+import com.bluefoxconsultant.sms.ui.resolve
 
 /**
  * The keypad, in its own section.
@@ -114,9 +118,10 @@ fun PhoneScreen(
     LaunchedEffect(sip.status) {
         if (sip.status != SipStatus.UNAVAILABLE) micro.launch(Manifest.permission.RECORD_AUDIO)
     }
+    val context = LocalContext.current
     LaunchedEffect(sip.error) {
         sip.error?.let {
-            snackbar.showSnackbar(it)
+            snackbar.showSnackbar(it.resolve(context))
             SipEngine.clearError()
         }
     }
@@ -140,7 +145,7 @@ fun PhoneScreen(
     }
     LaunchedEffect(vm.error) {
         vm.error?.let {
-            snackbar.showSnackbar(it)
+            snackbar.showSnackbar(it.resolve(context))
             vm.clearError()
         }
     }
@@ -149,8 +154,9 @@ fun PhoneScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text("Téléphone", fontWeight = FontWeight.SemiBold) },
+                title = { Text(stringResource(R.string.phone_title), fontWeight = FontWeight.SemiBold) },
                 actions = {
+                    BoutonTheme()
                     IconButton(
                         onClick = {
                             searchOpen = !searchOpen
@@ -159,8 +165,8 @@ fun PhoneScreen(
                     ) {
                         Icon(
                             if (searchOpen) Icons.Filled.Close else Icons.Filled.Search,
-                            contentDescription = if (searchOpen) "Fermer la recherche"
-                            else "Chercher un contact",
+                            contentDescription = if (searchOpen) stringResource(R.string.phone_search_close)
+                            else stringResource(R.string.phone_search_open),
                         )
                     }
                 },
@@ -204,7 +210,7 @@ fun PhoneScreen(
                 OutlinedTextField(
                     value = vm.query,
                     onValueChange = vm::searchName,
-                    placeholder = { Text("Nom du contact") },
+                    placeholder = { Text(stringResource(R.string.phone_search_placeholder)) },
                     singleLine = true,
                     leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
                     modifier = Modifier
@@ -222,7 +228,7 @@ fun PhoneScreen(
                     // regarde, même si un numéro traîne encore au clavier.
                     vm.query.isNotBlank() -> if (vm.matches.isEmpty()) {
                         Text(
-                            "Aucun contact à ce nom.",
+                            stringResource(R.string.phone_search_no_match),
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier
@@ -301,7 +307,7 @@ fun PhoneScreen(
                     ) {
                         Icon(
                             Icons.Filled.Call,
-                            contentDescription = "Appeler",
+                            contentDescription = stringResource(R.string.common_call),
                             tint = Color.White,
                             modifier = Modifier.size(28.dp),
                         )
@@ -357,15 +363,15 @@ private fun SipCallBar(
             .padding(horizontal = 16.dp, vertical = 10.dp),
     ) {
         Text(
-            text = leg.peer.ifBlank { "Appel" },
+            text = leg.peer.ifBlank { stringResource(R.string.phone_call_fallback_peer) },
             fontSize = 18.sp,
             fontWeight = FontWeight.SemiBold,
         )
         Text(
             text = when {
-                leg.established -> "En communication sur cet appareil"
-                leg.incoming -> "Appel entrant"
-                else -> "Appel en cours…"
+                leg.established -> stringResource(R.string.phone_call_on_this_device)
+                leg.incoming -> stringResource(R.string.common_incoming_call)
+                else -> stringResource(R.string.phone_call_dialing)
             },
             fontSize = 13.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -383,7 +389,7 @@ private fun SipCallBar(
                         modifier = Modifier.size(18.dp),
                     )
                     Spacer(Modifier.size(6.dp))
-                    Text(if (muted) "Réactiver" else "Muet")
+                    Text(stringResource(if (muted) R.string.common_unmute else R.string.common_mute))
                 }
                 TextButton(onClick = onSpeaker) {
                     Icon(
@@ -392,14 +398,14 @@ private fun SipCallBar(
                         modifier = Modifier.size(18.dp),
                     )
                     Spacer(Modifier.size(6.dp))
-                    Text(if (speaker) "Haut-parleur" else "Écouteur")
+                    Text(stringResource(if (speaker) R.string.phone_loudspeaker else R.string.phone_earpiece))
                 }
             } else if (leg.incoming) {
                 TextButton(onClick = onAnswer) {
                     Icon(Icons.Filled.Call, contentDescription = null,
                          modifier = Modifier.size(18.dp))
                     Spacer(Modifier.size(6.dp))
-                    Text("Répondre")
+                    Text(stringResource(R.string.common_answer_call))
                 }
             }
             Spacer(Modifier.weight(1f))
@@ -411,7 +417,7 @@ private fun SipCallBar(
                     modifier = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.size(6.dp))
-                Text("Raccrocher", color = MaterialTheme.colorScheme.error)
+                Text(stringResource(R.string.common_hang_up), color = MaterialTheme.colorScheme.error)
             }
         }
     }
@@ -433,7 +439,7 @@ private fun InCallBar(
         ) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    if (call.isUp) "En communication" else "Sonnerie…",
+                    stringResource(if (call.isUp) R.string.phone_in_call else R.string.phone_ringing),
                     color = Color.White,
                     fontSize = 12.sp,
                 )
@@ -447,7 +453,7 @@ private fun InCallBar(
                     maxLines = 1,
                 )
                 if (dtmfSent.isNotBlank()) Text(
-                    "Touches envoyées : $dtmfSent",
+                    stringResource(R.string.phone_dtmf_sent, dtmfSent),
                     color = Color.White.copy(alpha = .85f),
                     fontSize = 11.sp,
                     maxLines = 1,
@@ -462,7 +468,7 @@ private fun InCallBar(
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    if (hangingUp) "…" else "Raccrocher",
+                    if (hangingUp) "…" else stringResource(R.string.common_hang_up),
                     color = Color.White,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -515,7 +521,7 @@ private fun Keypad(
                 onClick = onBackspace,
                 modifier = Modifier.size(48.dp),
             ) {
-                Icon(Icons.Filled.Backspace, contentDescription = "Effacer un chiffre")
+                Icon(Icons.Filled.Backspace, contentDescription = stringResource(R.string.phone_delete_digit))
             }
             IconButton(onClick = onClear, modifier = Modifier.size(48.dp)) {
                 Text("C", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
@@ -569,7 +575,7 @@ private fun CallLog(
     if (calls.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
-                "Aucun appel récent",
+                stringResource(R.string.phone_no_recent_calls),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 13.sp,
             )
@@ -673,19 +679,19 @@ private fun CallLogSheet(
                 )
             }
             Spacer(Modifier.height(10.dp))
-            SheetAction(Icons.Filled.Call, "Appeler") { onCall() }
-            SheetAction(Icons.Filled.Dialpad, "Mettre au clavier") { onDial() }
-            SheetAction(Icons.Filled.ContentCopy, "Copier le numéro") {
+            SheetAction(Icons.Filled.Call, stringResource(R.string.common_call)) { onCall() }
+            SheetAction(Icons.Filled.Dialpad, stringResource(R.string.phone_log_dial)) { onDial() }
+            SheetAction(Icons.Filled.ContentCopy, stringResource(R.string.phone_log_copy_number)) {
                 presse.setText(AnnotatedString(entry.number))
                 onDismiss()
             }
             if (entry.partnerId > 0) {
-                SheetAction(Icons.Filled.Person, "Ouvrir la fiche") {
+                SheetAction(Icons.Filled.Person, stringResource(R.string.phone_log_open_contact)) {
                     OdooLinks.openRecord(context, "res.partner", entry.partnerId)
                     onDismiss()
                 }
             } else {
-                SheetAction(Icons.Filled.PersonAdd, "Ajouter aux contacts") {
+                SheetAction(Icons.Filled.PersonAdd, stringResource(R.string.phone_log_add_contact)) {
                     // Contacts DU TÉLÉPHONE : c'est le geste attendu d'un
                     // clavier. La fiche Odoo, elle, se crée depuis Odoo.
                     val intent = Intent(ContactsContract.Intents.Insert.ACTION).apply {

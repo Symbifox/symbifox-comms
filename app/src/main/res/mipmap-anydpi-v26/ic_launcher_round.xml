@@ -1,6 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Icône adaptative, fabriquée par `tools/fabriquer_icones.py` depuis
+     `tools/icone_source.png` : ne pas retoucher les PNG à la main.
+
+     🔴 Le fond n'est PAS transparent, et ne peut pas l'être : Android peint du
+     NOIR sous toute icône adaptative (AdaptiveIconDrawable.draw), et une icône
+     NON adaptative reçoit un disque blanc et rétrécit dedans. Fond commun à
+     toutes les applications Symbifox, choisi le 2026-09-14 (BF #25719) : le
+     bleu très pâle `@color/fond_lanceur`.
+
+     La couche monochrome est une silhouette dédiée (la mallette sans sa
+     marque), fabriquée par le même script. -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@color/ic_launcher_background"/>
+    <background android:drawable="@color/fond_lanceur"/>
     <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
     <monochrome android:drawable="@mipmap/ic_launcher_monochrome"/>
 </adaptive-icon>

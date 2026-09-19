@@ -20,8 +20,10 @@ class GenfoxStore(private val repo: GenfoxRepository) {
         if (loaded) return
         mutex.withLock {
             if (loaded) return
-            _config.value = repo.config() ?: GenfoxConfig()
-            loaded = true
+            // `loaded` seulement sur réponse : voir `AgendaStore`.
+            val config = repo.config()
+            _config.value = config ?: GenfoxConfig()
+            loaded = config != null
         }
     }
 

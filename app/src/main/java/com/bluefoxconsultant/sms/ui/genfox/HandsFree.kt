@@ -14,6 +14,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.bluefoxconsultant.sms.R
 
 enum class HandsFreeState { Off, Listening, Sending, Waiting, Speaking }
 
@@ -57,6 +58,13 @@ class HandsFreeController(
     /** Horloge du début de l'étape en cours, pour afficher un compteur qui avance. */
     var phaseSince by mutableStateOf(SystemClock.elapsedRealtime())
         private set
+
+    /**
+     * Pour écrire les avis dans la langue du téléphone. Le contexte de
+     * l'application et pas celui reçu : celui-ci est l'activité, qu'un
+     * contrôleur qui lui survit ne doit pas retenir.
+     */
+    private val appContext = context.applicationContext
 
     private val recorder = VoiceRecorder(context)
     private val speaker = Speaker(context)
@@ -102,7 +110,7 @@ class HandsFreeController(
     fun failed() {
         if (!isOn) return
         earcons.standDown()
-        onNotice("L'assistant n'a pas répondu — mode mains libres arrêté.")
+        onNotice(appContext.getString(R.string.handsfree_no_answer))
         stop()
     }
 
@@ -135,7 +143,7 @@ class HandsFreeController(
             earcons.yourTurn()
             delay(BEEP_GUARD_MS)
             if (!recorder.start()) {
-                onNotice("Le micro n'est pas disponible.")
+                onNotice(appContext.getString(R.string.speech_mic_unavailable))
                 stop()
                 return@launch
             }
@@ -159,7 +167,7 @@ class HandsFreeController(
                 // Heard nothing at all: the person is not talking to it. Stand
                 // down instead of recording the room in a loop.
                 earcons.standDown()
-                onNotice("Rien entendu — mode mains libres arrêté.")
+                onNotice(appContext.getString(R.string.handsfree_heard_nothing))
                 stop()
                 return@launch
             }
@@ -172,7 +180,7 @@ class HandsFreeController(
                 val text = Graph.speech.transcribe(file)
                 if (text.isBlank()) {
                     earcons.standDown()
-                    onNotice("Rien n'a été compris.")
+                    onNotice(appContext.getString(R.string.speech_nothing_understood))
                     stop()
                 } else {
                     this@HandsFreeController.heard = text
@@ -185,7 +193,7 @@ class HandsFreeController(
                 stop()
             } catch (e: Exception) {
                 earcons.standDown()
-                onNotice("Transcription impossible.")
+                onNotice(appContext.getString(R.string.speech_transcription_failed))
                 stop()
             } finally {
                 file.delete()

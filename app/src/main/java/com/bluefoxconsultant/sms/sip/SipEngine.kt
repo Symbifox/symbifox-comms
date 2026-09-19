@@ -25,6 +25,9 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.json.JSONObject
+import com.bluefoxconsultant.sms.R
+import com.bluefoxconsultant.sms.ui.UiText
+import com.bluefoxconsultant.sms.ui.uiText
 
 /**
  * Le poste SIP de l'appareil.
@@ -117,7 +120,7 @@ object SipEngine {
             // Pas encore enregistré : on retient le numéro plutôt que de perdre
             // le geste. Le premier « registered » le composera.
             SipStatus.CONNECTING -> queuedNumber = clean
-            else -> _state.value = _state.value.copy(error = "Le poste n'est pas connecté.")
+            else -> _state.value = _state.value.copy(error = uiText(R.string.sip_not_connected))
         }
     }
 
@@ -293,8 +296,14 @@ object SipEngine {
                 }
                 _state.value = _state.value.copy(
                     status = status,
+                    // La cause est celle de JsSIP (« Request Timeout »…), une valeur
+                    // de protocole : elle entre telle quelle dans la phrase traduite.
                     error = if (status == SipStatus.FAILED) {
-                        "Le poste n'a pas pu se connecter (" + o.optString("cause") + ")."
+                        uiText(
+                            R.string.sip_registration_failed,
+                            o.optString("cause").ifBlank { null }?.let { UiText.Raw(it) }
+                                ?: uiText(R.string.sip_cause_authentication),
+                        )
                     } else {
                         _state.value.error
                     },
@@ -339,7 +348,15 @@ object SipEngine {
                 _state.value = _state.value.copy(call = null, muted = false, speaker = false)
             }
             "muted" -> _state.value = _state.value.copy(muted = o.optBoolean("muted"))
-            "error" -> _state.value = _state.value.copy(error = o.optString("message"))
+            // La page rend un CODE, pas une phrase : la langue est celle de l'app,
+            // et la page n'a pas à la connaître.
+            "error" -> _state.value = _state.value.copy(
+                error = when (o.optString("code")) {
+                    "not_connected" -> uiText(R.string.sip_not_connected)
+                    "call_in_progress" -> uiText(R.string.sip_call_already_in_progress)
+                    else -> UiText.Raw(o.optString("message"))
+                },
+            )
         }
     }
 }
@@ -360,7 +377,7 @@ data class SipState(
     val call: CallLeg? = null,
     val muted: Boolean = false,
     val speaker: Boolean = false,
-    val error: String? = null,
+    val error: UiText? = null,
 ) {
     /** Le poste peut-il porter un appel maintenant ? */
     val ready: Boolean get() = status == SipStatus.REGISTERED

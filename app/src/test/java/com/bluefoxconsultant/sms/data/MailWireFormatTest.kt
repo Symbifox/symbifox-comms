@@ -7,6 +7,8 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.bluefoxconsultant.sms.R
+import com.bluefoxconsultant.sms.ui.UiText
 
 /**
  * Decodes real captured responses from `bf_email_management`'s mobile API.
@@ -119,6 +121,16 @@ class MailWireFormatTest {
     }
 
     @Test
+    fun `sans objet ni correspondant, le repli est une ressource et non du francais`() {
+        val vide = MailMessage()
+        assertEquals(UiText.Res(R.string.common_no_subject), vide.displaySubject)
+        assertEquals(UiText.Res(R.string.common_unknown), vide.correspondent)
+        assertEquals(UiText.Raw("Devis"), vide.copy(subject = "Devis").displaySubject)
+        // Le nom du partenaire d'abord, puis le libellé, puis l'adresse.
+        assertEquals(UiText.Raw("a@x.ca"), vide.copy(from = "a@x.ca").correspondent)
+    }
+
+    @Test
     fun `record search decodes`() {
         val resp = json.decodeFromString<MailRecordsResponse>(fixture("records"))
         assertTrue(resp.records.isNotEmpty())
@@ -134,9 +146,12 @@ class MailWireFormatTest {
     @Test
     fun `derived display fields behave on real rows`() {
         val resp = json.decodeFromString<MailThreadsResponse>(fixture("threads"))
+        // Jamais vide : soit le texte du serveur, non blanc, soit le repli
+        // traduit. Le repli n'est pas une chaîne ici, c'est une ressource.
+        fun nonVide(t: UiText) = t !is UiText.Raw || t.text.isNotBlank()
         resp.threads.forEach { thread ->
-            assertTrue("correspondent never blank", thread.correspondent.isNotBlank())
-            assertTrue("subject never blank", thread.displaySubject.isNotBlank())
+            assertTrue("correspondent never blank", nonVide(thread.correspondent))
+            assertTrue("subject never blank", nonVide(thread.displaySubject))
         }
         // An outbound row must not be counted as unread on the phone.
         resp.threads.filter { it.isOutgoing }.forEach {

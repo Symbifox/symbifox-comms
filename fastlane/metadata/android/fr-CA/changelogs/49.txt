@@ -1,0 +1,8 @@
+* Brouillons : ceux commencés au poste dans bf_email apparaissent dans la
+  section Brouillons, se modifient et s'envoient du téléphone
+* Brouillons : la section sépare « Commencés au poste » et « Sur cet
+  appareil » — les deux ne se comportent pas pareil hors ligne
+* Brouillons : un brouillon du poste déjà modifié au bureau ne s'écrase pas
+  en silence; le téléphone le dit et laisse choisir
+* Brouillons : corriger un objet au téléphone ne réécrit plus le texte mis
+  en forme au poste

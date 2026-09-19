@@ -9,6 +9,9 @@ import com.bluefoxconsultant.sms.data.Graph
 import com.bluefoxconsultant.sms.data.MailMessage
 import com.bluefoxconsultant.sms.data.isOffline
 import kotlinx.coroutines.launch
+import com.bluefoxconsultant.sms.R
+import com.bluefoxconsultant.sms.ui.UiText
+import com.bluefoxconsultant.sms.ui.uiText
 
 class MailThreadViewModel(private val threadKey: String) : ViewModel() {
 
@@ -20,9 +23,10 @@ class MailThreadViewModel(private val threadKey: String) : ViewModel() {
         private set
     var loading by mutableStateOf(true)
         private set
-    var error by mutableStateOf<String?>(null)
+    // Rédigés à l'écran, dans la langue du téléphone : voir [UiText].
+    var error by mutableStateOf<UiText?>(null)
         private set
-    var notice by mutableStateOf<String?>(null)
+    var notice by mutableStateOf<UiText?>(null)
         private set
     var offline by mutableStateOf(false)
         private set
@@ -65,8 +69,8 @@ class MailThreadViewModel(private val threadKey: String) : ViewModel() {
                     truncated = cached.truncated
                     expanded = cached.messages.lastOrNull()?.let { setOf(it.id) } ?: emptySet()
                 } else {
-                    error = if (e.isOffline()) "Hors ligne — ce fil n'est pas en cache."
-                    else "Impossible d'ouvrir ce fil."
+                    error = if (e.isOffline()) uiText(R.string.mail_thread_offline_not_cached)
+                    else uiText(R.string.mail_thread_open_failed)
                 }
             } finally {
                 loading = false
@@ -97,7 +101,7 @@ class MailThreadViewModel(private val threadKey: String) : ViewModel() {
                 val full = Graph.mail.message(emailId, loadImages = loadImages)
                 messages = messages.map { if (it.id == emailId) full else it }
             } catch (e: Exception) {
-                error = "Impossible de charger ce message."
+                error = uiText(R.string.mail_thread_message_load_failed)
             }
         }
     }
@@ -108,7 +112,7 @@ class MailThreadViewModel(private val threadKey: String) : ViewModel() {
                 Graph.mail.setHandled(listOf(message.id), handled = true)
                 onDone()
             } catch (e: Exception) {
-                error = "Archivage impossible."
+                error = uiText(R.string.mail_archive_failed)
             }
         }
     }
@@ -119,7 +123,7 @@ class MailThreadViewModel(private val threadKey: String) : ViewModel() {
                 Graph.mail.setHandled(listOf(message.id), handled = false)
                 onDone()
             } catch (e: Exception) {
-                error = "Action impossible."
+                error = uiText(R.string.mail_action_failed)
             }
         }
     }
@@ -143,7 +147,7 @@ class MailThreadViewModel(private val threadKey: String) : ViewModel() {
                 Graph.mail.snooze(listOf(message.id), untilMs)
                 onDone()
             } catch (e: Exception) {
-                error = "Report impossible."
+                error = uiText(R.string.mail_snooze_failed)
             }
         }
     }
@@ -152,9 +156,11 @@ class MailThreadViewModel(private val threadKey: String) : ViewModel() {
         viewModelScope.launch {
             try {
                 val resp = Graph.mail.spawn(message.id, kind)
-                notice = resp.record?.let { "Créé : ${it.name}" } ?: "Créé."
+                notice = resp.record?.let { uiText(R.string.mail_created_record, it.name) }
+                    ?: uiText(R.string.mail_created)
             } catch (e: Exception) {
-                error = e.message ?: "Création impossible."
+                // Le message d'une ApiException est celui du serveur : tel quel.
+                error = e.message?.let { UiText.Raw(it) } ?: uiText(R.string.mail_create_failed)
             }
         }
     }
@@ -163,10 +169,11 @@ class MailThreadViewModel(private val threadKey: String) : ViewModel() {
         viewModelScope.launch {
             try {
                 val resp = Graph.mail.route(message.id, model, recordId)
-                notice = resp.record?.let { "Importé dans ${it.name}" } ?: "Importé."
+                notice = resp.record?.let { uiText(R.string.mail_routed_record, it.name) }
+                    ?: uiText(R.string.mail_routed)
                 load()
             } catch (e: Exception) {
-                error = e.message ?: "Routage impossible."
+                error = e.message?.let { UiText.Raw(it) } ?: uiText(R.string.mail_route_failed)
             }
         }
     }

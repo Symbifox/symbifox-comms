@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Rien ne sort de l'appareil : ni sauvegarde infonuagique ni transfert
+     appareil-à-appareil. `allowBackup="false"` ne couvre que la première sur
+     Android 12 et plus ; le jeton est scellé par une clé Keystore qui ne
+     voyage pas, mais le cache courriel, les brouillons et la boîte d'envoi
+     sont en clair sous files/. Relevé à l'audit du 2026-09-08. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root"/>
+        <exclude domain="file"/>
+        <exclude domain="database"/>
+        <exclude domain="sharedpref"/>
+        <exclude domain="external"/>
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root"/>
+        <exclude domain="file"/>
+        <exclude domain="database"/>
+        <exclude domain="sharedpref"/>
+        <exclude domain="external"/>
+    </device-transfer>
+</data-extraction-rules>

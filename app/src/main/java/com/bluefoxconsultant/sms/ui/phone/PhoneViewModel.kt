@@ -12,6 +12,9 @@ import com.bluefoxconsultant.sms.data.PhoneContact
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.bluefoxconsultant.sms.R
+import com.bluefoxconsultant.sms.ui.UiText
+import com.bluefoxconsultant.sms.ui.uiText
 
 /** What has been dialled, what matches it, and what was called before. */
 class PhoneViewModel : ViewModel() {
@@ -33,7 +36,7 @@ class PhoneViewModel : ViewModel() {
     var calls by mutableStateOf<List<CallLogEntry>>(emptyList())
         private set
     var placing by mutableStateOf(false)
-    var error by mutableStateOf<String?>(null)
+    var error by mutableStateOf<UiText?>(null)
         private set
 
     var active by mutableStateOf<List<ActiveCall>>(emptyList())
@@ -122,7 +125,7 @@ class PhoneViewModel : ViewModel() {
                 Graph.phone.dtmf(key.toString())
                 dtmfSent = (dtmfSent + key).takeLast(16)
             } catch (e: Exception) {
-                error = "Touche non transmise."
+                error = uiText(R.string.phone_dtmf_failed)
             }
         }
     }
@@ -139,7 +142,7 @@ class PhoneViewModel : ViewModel() {
                 // The log gains a line once the call ends.
                 refresh()
             } catch (e: Exception) {
-                error = "Impossible de raccrocher."
+                error = uiText(R.string.phone_hangup_failed)
             } finally {
                 hangingUp = false
             }
@@ -158,7 +161,7 @@ class PhoneViewModel : ViewModel() {
             } catch (e: Exception) {
                 // A missing log is not worth an error banner over a keypad that
                 // otherwise works; only say so if nothing at all can be reached.
-                if (calls.isEmpty()) error = "Journal d'appels indisponible."
+                if (calls.isEmpty()) error = uiText(R.string.phone_call_log_unavailable)
             } finally {
                 refreshingCalls = false
             }

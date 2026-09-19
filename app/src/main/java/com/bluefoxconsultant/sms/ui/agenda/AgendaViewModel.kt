@@ -5,18 +5,24 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.bluefoxconsultant.sms.ui.Sequenceur
 import com.bluefoxconsultant.sms.ui.ancreARattraper
 import com.bluefoxconsultant.sms.ui.relectureUtile
 import com.bluefoxconsultant.sms.data.AgendaCalendar
 import com.bluefoxconsultant.sms.data.AgendaConfig
 import com.bluefoxconsultant.sms.data.AgendaEvent
 import com.bluefoxconsultant.sms.data.Graph
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.TemporalAdjusters
+import com.bluefoxconsultant.sms.data.AgendaPartner
+import com.bluefoxconsultant.sms.R
+import com.bluefoxconsultant.sms.ui.UiText
+import com.bluefoxconsultant.sms.ui.uiText
 
 private const val LIST_DAYS = 20L
 
@@ -42,6 +48,13 @@ enum class AgendaMode {
  * ferait disparaître de la colonne où elle est pourtant visible.
  */
 class AgendaViewModel : ViewModel() {
+
+    /**
+     * Voir `Sequenceur` : la dernière lecture lancée est la seule qui écrit.
+     * ⚠️ Déclaré AVANT `init`, qui lance la première lecture : plus bas, il
+     * serait encore nul à ce moment-là.
+     */
+    private val lecture = Sequenceur()
 
     /** Le fuseau de l'APPAREIL : c'est l'heure que la personne lit sur elle. */
     val zone: ZoneId = ZoneId.systemDefault()
@@ -77,7 +90,8 @@ class AgendaViewModel : ViewModel() {
      */
     private var suitAujourdhui = true
 
-    var error by mutableStateOf<String?>(null)
+    /** Résolu à l'écran, dans la langue du téléphone : voir `UiText`. */
+    var error by mutableStateOf<UiText?>(null)
         private set
     var selected by mutableStateOf<AgendaEvent?>(null)
         private set
@@ -187,7 +201,7 @@ class AgendaViewModel : ViewModel() {
             }.getOrNull()
             busy = false
             if (cree == null) {
-                error = "La rencontre n'a pas été créée."
+                error = uiText(R.string.agenda_error_meeting_not_created)
                 return@launch
             }
             composing = false
@@ -211,7 +225,7 @@ class AgendaViewModel : ViewModel() {
             }.getOrNull()
             busy = false
             if (maj == null) {
-                error = "L'exclusion n'a pas été enregistrée."
+                error = uiText(R.string.agenda_error_flags_not_saved)
                 return@launch
             }
             selected = maj
@@ -254,38 +268,100 @@ class AgendaViewModel : ViewModel() {
      * Posés dedans, ils n'existent qu'au prochain tour de la boucle
      * d'événements, et le battement de la minute peut se glisser entre les deux
      * pour lancer une seconde lecture de la même fenêtre.
+     *
+     * Une lecture neuve annule celle en vol (Q-M6). Silencieuse, elle HÉRITE
+     * du régime qu'elle remplace : un geste sur une fiche qui relit pendant un
+     * chargement visible ne doit ni éteindre le témoin ni taire l'erreur que
+     * la personne attend. Et seule la lecture courante touche aux témoins en
+     * finissant — celle qu'on vient d'annuler les éteindrait sous la neuve.
      */
     private fun charger(regime: Regime) {
-        when (regime) {
+        val effectif = when {
+            regime != Regime.SILENCIEUX -> regime
+            refreshing -> Regime.TIRE
+            loading -> Regime.VISIBLE
+            else -> Regime.SILENCIEUX
+        }
+        when (effectif) {
             Regime.VISIBLE -> loading = true
             Regime.TIRE -> refreshing = true
             Regime.SILENCIEUX -> Unit
         }
-        if (regime != Regime.SILENCIEUX) error = null
-        viewModelScope.launch {
+        if (effectif != Regime.SILENCIEUX) error = null
+        // La fenêtre et le fuseau sont pris au LANCEMENT : c'est à eux que la
+        // réponse correspond, quoi que la grille soit devenue entre-temps.
+        val visible = days
+        val from = visible.first().minusDays(1).atStartOfDay(zone).toInstant()
+        val to = visible.last().plusDays(2).atStartOfDay(zone).toInstant()
+        val fuseau = zone
+        lecture.lancer(viewModelScope) { n ->
             try {
-                val visible = days
-                val from = visible.first().minusDays(1).atStartOfDay(zone).toInstant()
-                val to = visible.last().plusDays(2).atStartOfDay(zone).toInstant()
-                events = Graph.agenda.events(from, to).events
-                taskCounts = Graph.agenda.taskCounts(from, to).counts
-                    .mapNotNull { (key, count) ->
-                        runCatching { LocalDate.parse(key) }.getOrNull()?.let { it to count }
-                    }.toMap()
+                val lus = Graph.agenda.events(from, to).events
+                val comptes = Graph.agenda.taskCounts(from, to, fuseau.id)
+                if (!lecture.estCourante(n)) return@lancer
+                events = lus
+                taskCounts = compteursPourLaGrille(comptes, fuseau)
                 lu = System.currentTimeMillis()
                 error = null
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 // Une relecture silencieuse qui échoue garde ce qui est affiché
                 // plutôt que de vider l'écran sur une coupure de deux secondes.
                 // Passé [PERIME_MS], l'en-tête le dit : voir `verifieA`.
-                if (regime != Regime.SILENCIEUX) {
-                    error = e.message ?: "Agenda indisponible."
+                if (effectif != Regime.SILENCIEUX && lecture.estCourante(n)) {
+                    // Le message du serveur passe tel quel ; seul le repli est à nous.
+                    error = e.message?.let { UiText.Raw(it) }
+                        ?: uiText(R.string.agenda_error_unavailable)
                 }
             } finally {
-                verifieA = System.currentTimeMillis()
-                loading = false
-                refreshing = false
+                if (lecture.estCourante(n)) {
+                    verifieA = System.currentTimeMillis()
+                    loading = false
+                    refreshing = false
+                }
             }
+        }
+    }
+
+    /** Les contacts trouvés pour le dialogue d'ajout ; vidés avec le terme. */
+    var partenaires by mutableStateOf<List<AgendaPartner>>(emptyList())
+        private set
+
+    fun chercherPartenaires(terme: String) {
+        if (terme.trim().length < 2) { partenaires = emptyList(); return }
+        viewModelScope.launch {
+            val trouves = Graph.agenda.partners(terme)
+            partenaires = trouves
+        }
+    }
+
+    /** [inviter] est la seule voie par laquelle un courriel part d'ici. */
+    fun ajouterParticipant(event: AgendaEvent, partnerId: Int, inviter: Boolean) =
+        actSurFiche {
+            Graph.agenda.setAttendees(event.id, event.key, add = listOf(partnerId), notify = inviter)
+        }
+
+    fun retirerParticipant(event: AgendaEvent, partnerId: Int) = actSurFiche {
+        Graph.agenda.setAttendees(event.id, event.key, remove = listOf(partnerId))
+    }
+
+    /**
+     * Un geste qui REND la fiche : le serveur la renvoie complète, on la prend
+     * telle quelle plutôt que de relire, puis on relit la grille pour le
+     * compte de participants.
+     */
+    private fun actSurFiche(block: suspend () -> AgendaEvent?) {
+        viewModelScope.launch {
+            busy = true
+            val fiche = runCatching { block() }.getOrNull()
+            busy = false
+            if (fiche == null) {
+                error = uiText(R.string.agenda_error_action_not_saved)
+                return@launch
+            }
+            if (selected?.key == fiche.key || selected?.id == fiche.id) selected = fiche
+            charger(Regime.SILENCIEUX)
         }
     }
 
@@ -314,7 +390,7 @@ class AgendaViewModel : ViewModel() {
             val ok = runCatching { block() }.getOrDefault(false)
             busy = false
             if (!ok) {
-                error = "Le geste n'a pas été enregistré."
+                error = uiText(R.string.agenda_error_action_not_saved)
                 return@launch
             }
             val current = selected

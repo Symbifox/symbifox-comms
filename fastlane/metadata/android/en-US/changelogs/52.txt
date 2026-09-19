@@ -1,0 +1,14 @@
+* Email replies: recipients are shown and editable (To, Cc, and Bcc), so is
+  the subject, and the original message shows below your text (hide it from
+  the ⋮ menu)
+* Email: pick the sending address. A reply goes out from the mailbox that
+  received the message by default, as on the desktop, with its signature
+* Email: bold, italics and lists look the way they will be received, without
+  asterisks
+* Email: "Undo" for a few seconds after Send (delay in Settings), schedule a
+  send, file a new email on a record, discard a draft in place, and recipient
+  groups
+* Drafts: a "Scheduled" pile, where a send can be held back
+* Offline: a queued email keeps its attachments, copies and formatting; if the
+  server refuses it, it goes back to Drafts
+* Reopening a draft saved on the phone no longer closes the app

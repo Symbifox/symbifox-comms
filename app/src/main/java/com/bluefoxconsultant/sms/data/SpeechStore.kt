@@ -26,8 +26,10 @@ class SpeechStore(private val repo: SpeechRepository) {
         if (loaded) return
         mutex.withLock {
             if (loaded) return
-            _config.value = repo.config() ?: SpeechConfig()
-            loaded = true
+            // `loaded` seulement sur réponse : voir `AgendaStore`.
+            val config = repo.config()
+            _config.value = config ?: SpeechConfig()
+            loaded = config != null
         }
     }
 

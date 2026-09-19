@@ -23,6 +23,15 @@ import com.bluefoxconsultant.sms.data.MailThreadsResponse
 import com.bluefoxconsultant.sms.data.RecordRef
 import com.bluefoxconsultant.sms.data.PendingAction
 import com.bluefoxconsultant.sms.data.RegisterPushRequest
+import com.bluefoxconsultant.sms.data.ReplyPrepareResponse
+import com.bluefoxconsultant.sms.data.ScheduledMailsResponse
+import com.bluefoxconsultant.sms.data.ScheduledRefRequest
+import com.bluefoxconsultant.sms.data.UnscheduleResponse
+import com.bluefoxconsultant.sms.data.ServerDraft
+import com.bluefoxconsultant.sms.data.ServerDraftRefRequest
+import com.bluefoxconsultant.sms.data.ServerDraftSaveRequest
+import com.bluefoxconsultant.sms.data.ServerDraftSaveResponse
+import com.bluefoxconsultant.sms.data.ServerDraftsResponse
 import com.bluefoxconsultant.sms.data.StagedUpload
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -152,11 +161,16 @@ class MailRepository(private val api: ApiClient) {
         attachmentIds: List<Int>? = null,
         clientToken: String? = null,
         bodyIsHtml: Boolean = false,
+        bcc: List<String>? = null,
+        subject: String? = null,
+        identityId: Int? = null,
+        scheduledMs: Long? = null,
     ): MailActionResponse = withContext(Dispatchers.IO) {
         json.decodeFromString(
             api.postJson("/reply", json.encodeToString(
                 MailReplyRequest(emailId, mode, body, to, cc, attachmentIds,
-                                 clientToken, bodyIsHtml))),
+                                 clientToken, bodyIsHtml, bcc, subject,
+                                 identityId, scheduledMs))),
         )
     }
 
@@ -168,13 +182,104 @@ class MailRepository(private val api: ApiClient) {
         attachmentIds: List<Int>? = null,
         clientToken: String? = null,
         bodyIsHtml: Boolean = false,
+        bcc: List<String>? = null,
+        identityId: Int? = null,
+        resModel: String? = null,
+        resId: Int? = null,
+        scheduledMs: Long? = null,
     ): MailActionResponse = withContext(Dispatchers.IO) {
         json.decodeFromString(
             api.postJson("/compose", json.encodeToString(
                 MailComposeRequest(to, subject, body, cc, attachmentIds,
-                                   clientToken, bodyIsHtml))),
+                                   clientToken, bodyIsHtml, bcc, identityId,
+                                   resModel, resId, scheduledMs))),
         )
     }
+
+    /**
+     * Ce qu'une réponse enverrait : destinataires, objet, adresse d'envoi
+     * (#25764). Lu à l'ouverture du composeur, jamais à l'envoi : le serveur
+     * ne crée rien pour y répondre.
+     */
+    suspend fun prepareReply(emailId: Int, mode: String): ReplyPrepareResponse =
+        withContext(Dispatchers.IO) {
+            json.decodeFromString(
+                api.get("/reply/prepare?email_id=$emailId&mode=${enc(mode)}"),
+            )
+        }
+
+    /** Mes envois programmés, du plus proche au plus lointain. */
+    suspend fun scheduled(limit: Int = 25): ScheduledMailsResponse =
+        withContext(Dispatchers.IO) {
+            json.decodeFromString(api.get("/scheduled?limit=$limit"))
+        }
+
+    /** Retenir un envoi programmé : il redevient un brouillon du poste. */
+    suspend fun unschedule(id: Int): UnscheduleResponse = withContext(Dispatchers.IO) {
+        json.decodeFromString(
+            api.postJson("/scheduled/unschedule", json.encodeToString(ScheduledRefRequest(id))),
+        )
+    }
+
+    // ---- brouillons du poste (#25579) ----
+
+    /**
+     * Les brouillons de bf_email, pas ceux de l'appareil.
+     *
+     * Le serveur n'en rend que les VRAIS : un envoi différé part de lui-même
+     * à sa date et reste au poste, une note interne ne sort jamais par
+     * courriel.
+     */
+    suspend fun serverDrafts(offset: Int = 0, limit: Int = 25, search: String = ""):
+        ServerDraftsResponse = withContext(Dispatchers.IO) {
+        val sb = StringBuilder("/drafts?offset=$offset&limit=$limit")
+        if (search.isNotBlank()) sb.append("&search=").append(enc(search))
+        json.decodeFromString(api.get(sb.toString()))
+    }
+
+    /** Un brouillon au complet : les deux corps et les pièces jointes. */
+    suspend fun serverDraft(id: Int): ServerDraft = withContext(Dispatchers.IO) {
+        json.decodeFromString(api.get("/draft?id=$id"))
+    }
+
+    /**
+     * Réécrire, en n'envoyant que ce qui a changé.
+     *
+     * Un paramètre laissé à `null` ne voyage pas et n'est donc pas touché
+     * côté serveur. `version` porte ce qu'on a lu : si le poste a modifié le
+     * brouillon depuis, la réponse revient en conflit et rien n'est écrit.
+     */
+    suspend fun saveServerDraft(
+        id: Int,
+        version: String? = null,
+        subject: String? = null,
+        body: String? = null,
+        bodyIsHtml: Boolean = false,
+        to: List<String>? = null,
+        attachmentIds: List<Int>? = null,
+    ): ServerDraftSaveResponse = withContext(Dispatchers.IO) {
+        json.decodeFromString(
+            api.postJson("/draft/save", json.encodeToString(
+                ServerDraftSaveRequest(id, version, subject, body, bodyIsHtml,
+                                       to, attachmentIds))),
+        )
+    }
+
+    suspend fun sendServerDraft(id: Int, version: String? = null):
+        ServerDraftSaveResponse = withContext(Dispatchers.IO) {
+        json.decodeFromString(
+            api.postJson("/draft/send",
+                         json.encodeToString(ServerDraftRefRequest(id, version))),
+        )
+    }
+
+    suspend fun deleteServerDraft(id: Int): ServerDraftSaveResponse =
+        withContext(Dispatchers.IO) {
+            json.decodeFromString(
+                api.postJson("/draft/delete",
+                             json.encodeToString(ServerDraftRefRequest(id))),
+            )
+        }
 
     // ---- Odoo-side actions ----
 
@@ -185,10 +290,16 @@ class MailRepository(private val api: ApiClient) {
             ).records
         }
 
-    suspend fun contacts(query: String): List<MailContact> =
+    /**
+     * [groups] ajoute les groupes de destinataires, dépliés (napkin #25278) :
+     * seulement quand l'instance les a en service, un client qui ne sait pas
+     * les lire afficherait sinon des contacts sans adresse.
+     */
+    suspend fun contacts(query: String, groups: Boolean = false): List<MailContact> =
         withContext(Dispatchers.IO) {
+            val suffixe = if (groups) "&groups=1" else ""
             json.decodeFromString<MailContactsResponse>(
-                api.get("/contacts?q=${enc(query)}"),
+                api.get("/contacts?q=${enc(query)}$suffixe"),
             ).contacts
         }
 
@@ -229,13 +340,30 @@ class MailRepository(private val api: ApiClient) {
             PendingAction.KIND_MARK_READ -> markRead(action.emailIds)
             PendingAction.KIND_HANDLE -> setHandled(action.emailIds, action.handled)
             PendingAction.KIND_SNOOZE -> snooze(action.emailIds, action.untilMs)
+            // 🔴 Tout ce que le composeur avait, et pas seulement le texte :
+            // jusqu'à la 2.43, un envoi mis en file hors ligne repartait sans
+            // ses pièces jointes, sans les Cc choisis en pastilles, et avec
+            // ses `**` en clair (#25764).
             PendingAction.KIND_REPLY -> reply(
                 emailId = action.emailId, mode = action.mode, body = action.body,
                 to = action.to, cc = action.cc, clientToken = action.token,
+                attachmentIds = action.attachments.map { it.attachmentId }.ifEmpty { null },
+                bodyIsHtml = action.bodyIsHtml,
+                bcc = action.bcc,
+                subject = action.subject.ifBlank { null },
+                identityId = action.identityId,
+                scheduledMs = action.scheduledMs,
             )
             PendingAction.KIND_COMPOSE -> compose(
                 to = action.to.orEmpty(), subject = action.subject,
                 body = action.body, cc = action.cc, clientToken = action.token,
+                attachmentIds = action.attachments.map { it.attachmentId }.ifEmpty { null },
+                bodyIsHtml = action.bodyIsHtml,
+                bcc = action.bcc,
+                identityId = action.identityId,
+                resModel = action.resModel,
+                resId = action.resId,
+                scheduledMs = action.scheduledMs,
             )
         }
     }

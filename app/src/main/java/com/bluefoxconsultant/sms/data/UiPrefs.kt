@@ -1,6 +1,8 @@
 package com.bluefoxconsultant.sms.data
 
 import android.content.Context
+import androidx.annotation.StringRes
+import com.bluefoxconsultant.sms.R
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -11,11 +13,11 @@ import kotlinx.coroutines.flow.asStateFlow
  * Defaults match what shipped before this was configurable, so nobody's
  * muscle memory changes by upgrading.
  */
-enum class SwipeAction(val key: String, val label: String) {
-    NONE("none", "Rien"),
-    ARCHIVE("archive", "Archiver"),
-    SNOOZE("snooze", "Reporter"),
-    MARK_READ("read", "Marquer lu"),
+enum class SwipeAction(val key: String, @StringRes val labelRes: Int) {
+    NONE("none", R.string.swipe_none),
+    ARCHIVE("archive", R.string.common_archive),
+    SNOOZE("snooze", R.string.common_snooze),
+    MARK_READ("read", R.string.common_mark_read),
     ;
 
     companion object {
@@ -35,12 +37,12 @@ enum class SwipeAction(val key: String, val label: String) {
  * else should make for you: a person triaging invoices wants "créer une
  * facture" one tap away, and someone running a helpdesk wants "billet".
  */
-enum class QuickAction(val key: String, val label: String) {
-    ARCHIVE("archive", "Archiver"),
-    SNOOZE("snooze", "Reporter"),
-    ROUTE("route", "Router"),
-    TASK("task", "Créer une tâche"),
-    MARK_READ("read", "Marquer lu"),
+enum class QuickAction(val key: String, @StringRes val labelRes: Int) {
+    ARCHIVE("archive", R.string.common_archive),
+    SNOOZE("snooze", R.string.common_snooze),
+    ROUTE("route", R.string.quick_action_route),
+    TASK("task", R.string.quick_action_task),
+    MARK_READ("read", R.string.common_mark_read),
     ;
 
     companion object {
@@ -71,6 +73,10 @@ data class SwipeConfig(
     val smsStart: SwipeAction = SwipeAction.ARCHIVE,
     val smsEnd: SwipeAction = SwipeAction.ARCHIVE,
 )
+
+/** Les choix offerts pour le délai d'annulation d'un envoi, en secondes. */
+val DELAIS_ANNULATION = listOf(0, 5, 10, 20, 30)
+const val DELAI_ANNULATION_DEFAUT = 10
 
 class UiPrefs(context: Context) {
 
@@ -111,6 +117,38 @@ class UiPrefs(context: Context) {
     fun setHostingMaintenance(enabled: Boolean) {
         prefs.edit().putBoolean(HOSTING_MAINTENANCE, enabled).apply()
         _hostingMaintenance.value = enabled
+    }
+
+    /**
+     * Montrer le message d'origine sous le texte d'une réponse (#25764).
+     *
+     * Vrai par défaut : ne pas voir ce à quoi l'on répond était l'irritant.
+     * Un réglage et non une conviction, retenu d'un message à l'autre, et
+     * basculé depuis le menu du composeur même, là où l'on en a besoin.
+     */
+    private val _voirOriginal = MutableStateFlow(prefs.getBoolean(VOIR_ORIGINAL, true))
+    val voirOriginalFlow: StateFlow<Boolean> = _voirOriginal.asStateFlow()
+    val voirOriginal: Boolean get() = _voirOriginal.value
+
+    fun setVoirOriginal(enabled: Boolean) {
+        prefs.edit().putBoolean(VOIR_ORIGINAL, enabled).apply()
+        _voirOriginal.value = enabled
+    }
+
+    /**
+     * Les secondes pendant lesquelles un envoi peut encore être annulé (#25764).
+     * 0 : l'envoi part au toucher, comme avant.
+     */
+    private val _delaiAnnulation = MutableStateFlow(
+        prefs.getInt(DELAI_ANNULATION, DELAI_ANNULATION_DEFAUT),
+    )
+    val delaiAnnulationFlow: StateFlow<Int> = _delaiAnnulation.asStateFlow()
+    val delaiAnnulation: Int get() = _delaiAnnulation.value
+
+    fun setDelaiAnnulation(secondes: Int) {
+        val borne = secondes.coerceIn(0, 60)
+        prefs.edit().putInt(DELAI_ANNULATION, borne).apply()
+        _delaiAnnulation.value = borne
     }
 
     private val _quick = MutableStateFlow(
@@ -158,5 +196,7 @@ class UiPrefs(context: Context) {
         const val THREAD_VIEW = "thread_view"
         const val QUICK_ACTIONS = "quick_actions"
         const val HOSTING_MAINTENANCE = "hosting_maintenance"
+        const val VOIR_ORIGINAL = "compose_show_original"
+        const val DELAI_ANNULATION = "undo_send_seconds"
     }
 }

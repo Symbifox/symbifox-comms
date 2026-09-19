@@ -1,6 +1,10 @@
 [versions]
 agp = "8.13.2"
-kotlin = "2.0.21"
+# ⚠️ Pas en deçà de 2.1 : le connecteur UnifiedPush 3.3.5 est compilé en
+# Kotlin 2.2 et tire kotlin-stdlib 2.2.10. Un compilateur lit les métadonnées
+# d'UNE version au-dessus de la sienne, pas deux : en 2.0.21, le build refuse
+# le connecteur et la bibliothèque standard.
+kotlin = "2.1.21"
 coreKtx = "1.13.1"
 lifecycle = "2.8.6"
 activityCompose = "1.9.3"
@@ -11,7 +15,8 @@ webkit = "1.11.0"
 okhttp = "4.12.0"
 serializationJson = "1.7.3"
 securityCrypto = "1.1.0-alpha06"
-unifiedpush = "2.5.0"
+unifiedpush = "3.3.5"
+tinkAndroid = "1.23.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -34,6 +39,7 @@ junit = { group = "junit", name = "junit", version = "4.13.2" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version = "1.8.1" }
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
 unifiedpush-connector = { group = "org.unifiedpush.android", name = "connector", version.ref = "unifiedpush" }
+tink-android = { group = "com.google.crypto.tink", name = "tink-android", version.ref = "tinkAndroid" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

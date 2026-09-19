@@ -39,6 +39,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bluefoxconsultant.sms.data.SharedContent
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import com.bluefoxconsultant.sms.R
 
 /**
  * « Envoyer vers » : où va ce qu'une autre app vient de partager.
@@ -64,10 +67,10 @@ fun ShareScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Envoyer avec", fontWeight = FontWeight.SemiBold) },
+                title = { Text(stringResource(R.string.share_title), fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -90,11 +93,13 @@ fun ShareScreen(
 
             if (canSms) {
                 ListItem(
-                    headlineContent = { Text("Texto") },
+                    headlineContent = { Text(stringResource(R.string.share_text)) },
                     supportingContent = {
                         Text(
-                            if (shared.hasFiles) "Part en MMS, vers un numéro."
-                            else "Vers un numéro.",
+                            stringResource(
+                                if (shared.hasFiles) R.string.share_text_with_files
+                                else R.string.share_text_no_files,
+                            ),
                         )
                     },
                     leadingContent = {
@@ -105,11 +110,13 @@ fun ShareScreen(
             }
             if (canMail) {
                 ListItem(
-                    headlineContent = { Text("Courriel") },
+                    headlineContent = { Text(stringResource(R.string.share_email)) },
                     supportingContent = {
                         Text(
-                            if (shared.hasFiles) "En pièce jointe, vers une adresse."
-                            else "Vers une adresse.",
+                            stringResource(
+                                if (shared.hasFiles) R.string.share_email_with_files
+                                else R.string.share_email_no_files,
+                            ),
                         )
                     },
                     leadingContent = {
@@ -149,8 +156,11 @@ private fun SharePreview(shared: SharedContent) {
                 ) {
                     Icon(Icons.Filled.AttachFile, null, Modifier.size(16.dp), tint = BrandAccent)
                     Text(
-                        if (shared.uris.size == 1) "1 fichier"
-                        else "${shared.uris.size} fichiers",
+                        pluralStringResource(
+                            R.plurals.share_file_count,
+                            shared.uris.size,
+                            shared.uris.size,
+                        ),
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

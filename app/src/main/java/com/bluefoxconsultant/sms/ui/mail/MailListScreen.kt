@@ -4,6 +4,8 @@ package com.bluefoxconsultant.sms.ui.mail
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -63,6 +65,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.text.style.TextAlign
@@ -85,15 +88,26 @@ import com.bluefoxconsultant.sms.data.MailFilter
 import com.bluefoxconsultant.sms.data.SwipeAction
 import com.bluefoxconsultant.sms.ui.relativeTime
 import com.bluefoxconsultant.sms.data.MailDraft
+import com.bluefoxconsultant.sms.data.ScheduledMail
+import com.bluefoxconsultant.sms.data.ServerDraft
 import com.bluefoxconsultant.sms.data.MailMessage
 import com.bluefoxconsultant.sms.ui.SwipeActionRow
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
+import com.bluefoxconsultant.sms.ui.BoutonTheme
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import com.bluefoxconsultant.sms.R
+import com.bluefoxconsultant.sms.ui.UiText
+import com.bluefoxconsultant.sms.ui.asString
+import com.bluefoxconsultant.sms.ui.resolve
 
 @Composable
 fun MailListScreen(
     onOpenThread: (String) -> Unit,
     onCompose: () -> Unit,
     onOpenDraft: (MailDraft) -> Unit,
+    onOpenServerDraft: (ServerDraft) -> Unit,
     onSettings: () -> Unit,
     vm: MailListViewModel = viewModel(),
 ) {
@@ -105,6 +119,7 @@ fun MailListScreen(
     val swipe by Graph.uiPrefs.configFlow.collectAsState()
     val threadView by Graph.uiPrefs.threadViewFlow.collectAsState()
     var menuOpen by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     // Infinite scroll: ask for the next page a few rows before the end so the
     // spinner rarely shows.
@@ -133,7 +148,7 @@ fun MailListScreen(
     LaunchedEffect(vm.notice, vm.error) {
         val message = vm.error ?: vm.notice
         if (message != null) {
-            snackbar.showSnackbar(message)
+            snackbar.showSnackbar(message.resolve(context))
             vm.dismissNotice()
         }
     }
@@ -142,10 +157,10 @@ fun MailListScreen(
     // rather than deferred, so leaving the screen never loses it.
     LaunchedEffect(vm.undoable) {
         val undo = vm.undoable ?: return@LaunchedEffect
-        val label = vm.undoLabel.orEmpty()
+        val label = vm.undoLabel?.resolve(context).orEmpty()
         val result = snackbar.showSnackbar(
             message = label,
-            actionLabel = "Annuler",
+            actionLabel = context.getString(R.string.common_undo),
             withDismissAction = false,
             duration = SnackbarDuration.Short,
         )
@@ -188,18 +203,19 @@ fun MailListScreen(
                 )
             } else {
                 TopAppBar(
-                    title = { Text("Courriel", fontWeight = FontWeight.SemiBold) },
+                    title = { Text(stringResource(R.string.service_mail), fontWeight = FontWeight.SemiBold) },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = BrandAccent,
                         titleContentColor = Color.White,
                         actionIconContentColor = Color.White,
                     ),
                     actions = {
+                        BoutonTheme()
                         IconButton(onClick = { vm.openSearch() }) {
-                            Icon(Icons.Filled.Search, contentDescription = "Rechercher")
+                            Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.common_search))
                         }
                         IconButton(onClick = { menuOpen = true }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = "Options")
+                            Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.common_options))
                         }
                         DropdownMenu(
                             expanded = menuOpen,
@@ -208,8 +224,8 @@ fun MailListScreen(
                             DropdownMenuItem(
                                 text = {
                                     Text(
-                                        if (threadView) "Vue par conversation"
-                                        else "Vue par message",
+                                        if (threadView) stringResource(R.string.mail_list_conversation_view)
+                                        else stringResource(R.string.mail_list_message_view),
                                     )
                                 },
                                 leadingIcon = {
@@ -229,7 +245,7 @@ fun MailListScreen(
                                 },
                             )
                             DropdownMenuItem(
-                                text = { Text("Réglages") },
+                                text = { Text(stringResource(R.string.mail_list_settings)) },
                                 leadingIcon = {
                                     Icon(Icons.Filled.Settings, contentDescription = null)
                                 },
@@ -242,7 +258,11 @@ fun MailListScreen(
         },
         floatingActionButton = {
             FloatingActionButton(onClick = onCompose, containerColor = BrandAccent) {
-                Icon(Icons.Filled.Edit, contentDescription = "Nouveau courriel", tint = Color.White)
+                Icon(
+                    Icons.Filled.Edit,
+                    contentDescription = stringResource(R.string.common_new_email),
+                    tint = Color.White,
+                )
             }
         },
     ) { padding ->
@@ -250,10 +270,26 @@ fun MailListScreen(
             if (vm.offline || vm.queued > 0) {
                 OfflineBanner(offline = vm.offline, queued = vm.queued)
             }
+            // Une pastille par boîte, seulement quand il y en a plusieurs
+            // (#25734) : une seule boîte n'a rien à distinguer.
+            val comptes = vm.config.accounts
+            val couleurs = remember(comptes) { couleursDesComptes(comptes) }
+            if (comptes.size > 1) {
+                AccountRow(
+                    comptes = comptes,
+                    couleurs = couleurs,
+                    selected = vm.accountId,
+                    onSelect = vm::selectAccount,
+                )
+            }
             FilterRow(
                 selected = vm.filter,
-                counts = vm.counts,
-                draftCount = drafts.size,
+                // Les sections comptent la boîte filtrée ; la pastille de
+                // l'onglet, elle, reste sur toutes (voir `MailCounts.pourCompte`).
+                counts = vm.counts.pourCompte(vm.accountId),
+                // Les DEUX piles : la personne compte des brouillons, pas
+                // des endroits où ils dorment.
+                draftCount = drafts.size + vm.serverDrafts.size,
                 onSelect = vm::selectFilter,
             )
             HorizontalDivider()
@@ -263,12 +299,19 @@ fun MailListScreen(
                 modifier = Modifier.fillMaxSize(),
             ) {
                 when {
-                    // Les brouillons sont locaux : ni chargement, ni pagination,
-                    // ni gestes de tri — rien de ce que la liste du serveur fait.
+                    // Deux piles, une section : ceux de l'appareil et ceux
+                    // du poste. Ni pagination ni gestes de tri — rien de ce
+                    // que la liste du serveur fait sur des courriels reçus.
                     vm.filter == MailFilter.DRAFTS -> DraftList(
                         drafts = drafts,
+                        serverDrafts = vm.serverDrafts,
+                        scheduled = vm.scheduled,
+                        serverError = vm.serverDraftsError,
                         onOpen = onOpenDraft,
+                        onOpenServer = onOpenServerDraft,
                         onDelete = vm::deleteDraft,
+                        onDeleteServer = vm::deleteServerDraft,
+                        onUnschedule = vm::unschedule,
                     )
                     !vm.firstLoadDone -> CenteredSpinner()
                     vm.threads.isEmpty() -> EmptyState(vm.filter, vm.searchTerm)
@@ -304,6 +347,11 @@ fun MailListScreen(
                             ) {
                                 MailRow(
                                     message = thread,
+                                    // Le liseré de la boîte, sauf quand la liste
+                                    // n'en montre qu'une : il ne dirait rien.
+                                    couleurBoite = if (comptes.size > 1 && vm.accountId == null)
+                                        thread.accountId?.let { couleurs[it] }?.let(::couleurHex)
+                                    else null,
                                     onClick = {
                                         if (vm.selectionMode) vm.toggleSelect(thread)
                                         else onOpenThread(thread.threadKey)
@@ -378,7 +426,7 @@ private fun SelectionBar(
         title = { Text("$count", fontWeight = FontWeight.SemiBold) },
         navigationIcon = {
             IconButton(onClick = onClose) {
-                Icon(Icons.Filled.Close, contentDescription = "Quitter la sélection")
+                Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.common_exit_selection))
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(
@@ -389,25 +437,29 @@ private fun SelectionBar(
         ),
         actions = {
             IconButton(onClick = onSelectAll) {
-                Icon(Icons.Filled.SelectAll, contentDescription = "Tout sélectionner")
+                Icon(Icons.Filled.SelectAll, contentDescription = stringResource(R.string.common_select_all))
             }
             IconButton(onClick = onMarkRead) {
-                Icon(Icons.Filled.MarkEmailRead, contentDescription = "Marquer lu")
+                Icon(Icons.Filled.MarkEmailRead, contentDescription = stringResource(R.string.common_mark_read))
             }
             if (snoozePreset != null && !restoring) {
                 IconButton(onClick = { onSnooze(snoozePreset.untilMs) }) {
-                    Icon(Icons.Filled.Snooze, contentDescription = "Reporter à demain")
+                    Icon(
+                        Icons.Filled.Snooze,
+                        contentDescription = stringResource(R.string.mail_list_snooze_tomorrow),
+                    )
                 }
             }
             IconButton(onClick = if (restoring) onRestore else onArchive) {
                 Icon(
                     if (restoring) Icons.Filled.Inbox else Icons.Filled.Archive,
-                    contentDescription = if (restoring) "Remettre" else "Archiver",
+                    contentDescription = if (restoring) stringResource(R.string.mail_list_restore)
+                    else stringResource(R.string.common_archive),
                 )
             }
             if (onMore != null) {
                 IconButton(onClick = onMore) {
-                    Icon(Icons.Filled.MoreVert, contentDescription = "Autres actions")
+                    Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.mail_list_more_actions))
                 }
             }
         },
@@ -424,9 +476,9 @@ private fun SelectionBar(
 private fun OfflineBanner(offline: Boolean, queued: Int) {
     val text = when {
         offline && queued > 0 ->
-            "Hors ligne — affichage en cache · $queued action(s) en attente"
-        offline -> "Hors ligne — affichage de la dernière synchronisation"
-        else -> "$queued action(s) en attente d'envoi"
+            pluralStringResource(R.plurals.mail_offline_cached_queued, queued, queued)
+        offline -> stringResource(R.string.mail_offline_last_sync)
+        else -> pluralStringResource(R.plurals.mail_queued_actions, queued, queued)
     }
     Row(
         modifier = Modifier
@@ -451,23 +503,38 @@ private fun OfflineBanner(offline: Boolean, queued: Int) {
 }
 
 /**
- * Les brouillons de l'appareil.
+ * Les brouillons, des deux bords.
  *
- * Deux gestes, et pas plus : reprendre, ou jeter. Tout ce que la liste du
- * serveur sait faire — archiver, reporter, router vers un enregistrement —
- * suppose un courriel qui existe quelque part ; celui-ci n'existe que là.
+ * Deux piles dans une seule section, et rien ne les fusionne. Celle de
+ * l'appareil est un fichier local : elle survit à un écran quitté, hors ligne
+ * comprise. Celle du poste vient de `bf_email` (#25579) : elle est accrochée
+ * à une fiche Odoo, elle s'ouvre, se modifie et s'envoie à distance.
+ *
+ * Elles restent VISIBLEMENT distinctes, et ce n'est pas décoratif : un
+ * brouillon du poste peut partir d'ici, celui de l'appareil doit d'abord être
+ * envoyé, et hors ligne l'un s'ouvre quand l'autre non. Les confondre
+ * ferait promettre à l'un ce que seul l'autre tient.
+ *
+ * Deux gestes par ligne, et pas plus : reprendre, ou jeter. Tout ce que la
+ * liste du serveur sait faire — archiver, reporter, router vers un
+ * enregistrement — suppose un courriel reçu ; un brouillon n'en est pas un.
  */
 @Composable
 private fun DraftList(
     drafts: List<MailDraft>,
+    serverDrafts: List<ServerDraft>,
+    scheduled: List<ScheduledMail>,
+    serverError: UiText?,
     onOpen: (MailDraft) -> Unit,
+    onOpenServer: (ServerDraft) -> Unit,
     onDelete: (MailDraft) -> Unit,
+    onDeleteServer: (ServerDraft) -> Unit,
+    onUnschedule: (ScheduledMail) -> Unit,
 ) {
-    if (drafts.isEmpty()) {
+    if (drafts.isEmpty() && serverDrafts.isEmpty() && scheduled.isEmpty() && serverError == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
-                "Aucun brouillon. Un courriel commencé et laissé en plan " +
-                    "atterrit ici plutôt que d'être perdu.",
+                stringResource(R.string.mail_drafts_empty),
                 fontSize = 13.sp,
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -480,47 +547,171 @@ private fun DraftList(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 88.dp),
     ) {
-        items(drafts, key = { it.id }) { draft ->
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onOpen(draft) }
-                    .padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        draft.label,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        draft.recipients,
-                        fontSize = 13.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        listOf(draft.kindLabel, relativeTime(draft.savedMs))
-                            .filter { it.isNotBlank() }
-                            .joinToString(" · "),
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                IconButton(onClick = { onDelete(draft) }) {
-                    Icon(
-                        Icons.Filled.Delete,
-                        contentDescription = "Supprimer le brouillon",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+        // Les programmés d'abord : ce sont les seuls qui partiront tout seuls.
+        if (scheduled.isNotEmpty()) {
+            item(key = "entete-programmes") {
+                DraftSectionHeader(stringResource(R.string.mail_scheduled_section))
             }
-            HorizontalDivider()
+        }
+        items(scheduled, key = { "prog-${it.id}" }) { envoi ->
+            ScheduledRow(envoi = envoi, onUnschedule = { onUnschedule(envoi) })
+        }
+        if (serverDrafts.isNotEmpty()) {
+            item(key = "entete-poste") {
+                DraftSectionHeader(stringResource(R.string.mail_drafts_started_on_desktop))
+            }
+        }
+        items(serverDrafts, key = { "srv-${it.id}" }) { draft ->
+            DraftRow(
+                title = draft.label.asString(),
+                subtitle = draft.recipients.asString(),
+                // La fiche porteuse plutôt que le mode : c'est ce qui situe un
+                // brouillon du poste, et ce que le téléphone ne devine pas.
+                footer = listOf(draft.record?.name.orEmpty(),
+                                relativeTime(draft.savedMs))
+                    .filter { it.isNotBlank() }.joinToString(" · "),
+                attachmentCount = draft.attachments.size,
+                onOpen = { onOpenServer(draft) },
+                onDelete = { onDeleteServer(draft) },
+            )
+        }
+        if (serverError != null) {
+            item(key = "erreur-poste") {
+                Text(
+                    serverError.asString(),
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                )
+            }
+        }
+        if (drafts.isNotEmpty() && serverDrafts.isNotEmpty()) {
+            item(key = "entete-appareil") {
+                DraftSectionHeader(stringResource(R.string.mail_drafts_on_this_device))
+            }
+        }
+        items(drafts, key = { it.id }) { draft ->
+            DraftRow(
+                title = draft.label.asString(),
+                subtitle = draft.recipients.asString(),
+                footer = listOf(draft.kindLabel.asString(), relativeTime(draft.savedMs))
+                    .filter { it.isNotBlank() }.joinToString(" · "),
+                attachmentCount = draft.attachments.size,
+                onOpen = { onOpen(draft) },
+                onDelete = { onDelete(draft) },
+            )
         }
     }
+}
+
+/**
+ * Un envoi programmé. Un seul geste : le retenir, ce qui le remet dans les
+ * brouillons du poste. Pas d'« envoyer maintenant » : devancer une heure
+ * choisie d'un doigt sur un petit écran est trop facile.
+ */
+@Composable
+private fun ScheduledRow(envoi: ScheduledMail, onUnschedule: () -> Unit) {
+    val quand = remember(envoi.scheduledMs) {
+        java.time.format.DateTimeFormatter.ofPattern("EEE d MMM, HH:mm", java.util.Locale.getDefault())
+            .format(java.time.Instant.ofEpochMilli(envoi.scheduledMs).atZone(java.time.ZoneId.systemDefault()))
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
+    ) {
+        Icon(
+            Icons.Filled.Schedule,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(end = 12.dp),
+        )
+        Column(Modifier.weight(1f)) {
+            Text(envoi.label.asString(), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                envoi.recipients.asString(),
+                fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                listOf(stringResource(R.string.mail_scheduled_at, quand), envoi.record?.name.orEmpty())
+                    .filter { it.isNotBlank() }.joinToString(" · "),
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        TextButton(onClick = onUnschedule) {
+            Text(stringResource(R.string.mail_scheduled_unschedule), fontSize = 13.sp)
+        }
+    }
+    HorizontalDivider()
+}
+
+@Composable
+private fun DraftSectionHeader(label: String) {
+    Text(
+        label,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
+    )
+}
+
+@Composable
+private fun DraftRow(
+    title: String,
+    subtitle: String,
+    footer: String,
+    attachmentCount: Int,
+    onOpen: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onOpen() }
+            .padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                subtitle,
+                fontSize = 13.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                listOf(
+                    footer,
+                    if (attachmentCount > 0) {
+                        pluralStringResource(R.plurals.mail_draft_attachment_count, attachmentCount, attachmentCount)
+                    } else {
+                        ""
+                    },
+                )
+                    .filter { it.isNotBlank() }.joinToString(" · "),
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        IconButton(onClick = onDelete) {
+            Icon(
+                Icons.Filled.Delete,
+                contentDescription = stringResource(R.string.mail_draft_delete),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+    HorizontalDivider()
 }
 
 @Composable
@@ -546,17 +737,76 @@ private fun FilterRow(
     ) {
         items(MailFilter.entries.toList()) { filter ->
             val count = badge(filter)
+            // Un pictogramme par boîte : sept libellés qui défilent se lisent
+            // mal, un pictogramme se reconnaît avant qu'on l'ait lu. La
+            // correspondance vit dans `iconeDeBoite`, à côté de l'enum.
             FilterChip(
                 selected = filter == selected,
                 onClick = { onSelect(filter) },
+                leadingIcon = {
+                    Icon(
+                        iconeDeBoite(filter),
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                    )
+                },
                 label = {
-                    Text(if (count != null) "${filter.label} · $count" else filter.label)
+                    val libelle = stringResource(filter.labelRes)
+                    Text(if (count != null) "$libelle · $count" else libelle)
                 },
                 modifier = Modifier.padding(end = 8.dp),
             )
         }
     }
 }
+
+/**
+ * Les boîtes, en pastilles de leur couleur. « Toutes » d'abord ; toucher la
+ * boîte choisie revient à toutes.
+ */
+@Composable
+private fun AccountRow(
+    comptes: List<com.bluefoxconsultant.sms.data.MailAccount>,
+    couleurs: Map<Int, String>,
+    selected: Int?,
+    onSelect: (Int?) -> Unit,
+) {
+    LazyRow(
+        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 6.dp),
+    ) {
+        item {
+            FilterChip(
+                selected = selected == null,
+                onClick = { onSelect(null) },
+                label = { Text(stringResource(R.string.mail_accounts_all)) },
+                modifier = Modifier.padding(end = 8.dp),
+            )
+        }
+        items(comptes, key = { it.id }) { compte ->
+            val teinte = couleurs[compte.id]?.let(::couleurHex) ?: BrandAccent
+            FilterChip(
+                selected = selected == compte.id,
+                onClick = { onSelect(compte.id) },
+                leadingIcon = {
+                    Box(Modifier.size(10.dp).background(teinte, CircleShape))
+                },
+                label = {
+                    Text(
+                        libelleCompte(compte),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.widthIn(max = 160.dp),
+                    )
+                },
+                modifier = Modifier.padding(end = 8.dp),
+            )
+        }
+    }
+}
+
+/** `#RRGGBB` validé en amont par `couleursDesComptes`. */
+internal fun couleurHex(hex: String): Color? =
+    runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrNull()
 
 @Composable
 private fun MailSearchBar(term: String, onChange: (String) -> Unit, onClose: () -> Unit) {
@@ -567,7 +817,12 @@ private fun MailSearchBar(term: String, onChange: (String) -> Unit, onClose: () 
             TextField(
                 value = term,
                 onValueChange = onChange,
-                placeholder = { Text("Rechercher…", color = Color.White.copy(alpha = 0.7f)) },
+                placeholder = {
+                    Text(
+                        stringResource(R.string.mail_list_search_placeholder),
+                        color = Color.White.copy(alpha = 0.7f),
+                    )
+                },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().focusRequester(focus),
                 colors = TextFieldDefaults.colors(
@@ -583,7 +838,7 @@ private fun MailSearchBar(term: String, onChange: (String) -> Unit, onClose: () 
         },
         navigationIcon = {
             IconButton(onClick = onClose) {
-                Icon(Icons.Filled.Close, contentDescription = "Fermer", tint = Color.White)
+                Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.common_close), tint = Color.White)
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(containerColor = BrandAccent),
@@ -603,9 +858,9 @@ private fun CenteredSpinner(compact: Boolean = false) {
 @Composable
 private fun EmptyState(filter: MailFilter, search: String) {
     val message = when {
-        search.isNotBlank() -> "Aucun résultat pour « $search »."
-        filter == MailFilter.INBOX -> "Boîte de réception vide."
-        else -> "Rien dans « ${filter.label} »."
+        search.isNotBlank() -> stringResource(R.string.mail_list_no_results_for, search)
+        filter == MailFilter.INBOX -> stringResource(R.string.mail_list_inbox_empty)
+        else -> stringResource(R.string.mail_list_nothing_in, stringResource(filter.labelRes))
     }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Row {

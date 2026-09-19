@@ -9,16 +9,24 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bluefoxconsultant.sms.data.Contact
 import com.bluefoxconsultant.sms.data.Graph
+import com.bluefoxconsultant.sms.data.LectureBornee
 import com.bluefoxconsultant.sms.data.Line
 import com.bluefoxconsultant.sms.data.MediaPrep
 import com.bluefoxconsultant.sms.data.OutgoingMedia
+import com.bluefoxconsultant.sms.data.PieceProposee
 import com.bluefoxconsultant.sms.data.SendMedia
 import com.bluefoxconsultant.sms.data.SharedContent
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.bluefoxconsultant.sms.R
+import com.bluefoxconsultant.sms.ui.UiText
+import com.bluefoxconsultant.sms.ui.uiPlural
+import com.bluefoxconsultant.sms.ui.uiText
 
 class ComposeViewModel : ViewModel() {
 
@@ -39,7 +47,7 @@ class ComposeViewModel : ViewModel() {
         private set
     var sending by mutableStateOf(false)
         private set
-    var error by mutableStateOf<String?>(null)
+    var error by mutableStateOf<UiText?>(null)
         private set
 
     /** Pièces jointes déjà lues et mises au gabarit, prêtes à partir en MMS. */
@@ -47,6 +55,14 @@ class ComposeViewModel : ViewModel() {
         private set
     /** Combien de fichiers sont encore en cours de lecture. */
     var preparing by mutableStateOf(0)
+        private set
+
+    /**
+     * Fichiers partagés, pas encore lus : ils attendent « Joindre » ou
+     * « Envoyer ». Même règle que le composeur courriel (C-M2) : partager vers
+     * Comms ne vaut pas accord pour lire.
+     */
+    var proposees by mutableStateOf<List<PieceProposee>>(emptyList())
         private set
 
     private var searchJob: Job? = null
@@ -69,7 +85,7 @@ class ComposeViewModel : ViewModel() {
      * `attachments` encore vide et passeraient le contrôle ensemble.
      */
     val canAttachMore: Boolean
-        get() = attachments.size + preparing < MediaPrep.MAX_PARTS
+        get() = attachments.size + preparing + proposees.size < MediaPrep.MAX_PARTS
 
     fun selectLine(id: Int) {
         selectedLineId = id
@@ -95,10 +111,33 @@ class ComposeViewModel : ViewModel() {
         // sans un mot — l'usager croirait les avoir envoyées.
         val files = shared.uris.take(MediaPrep.MAX_PARTS)
         if (shared.uris.size > files.size) {
-            error = "Un MMS ne porte que ${MediaPrep.MAX_PARTS} pièces : " +
-                "${shared.uris.size - files.size} de plus ont été laissées de côté."
+            val laissees = shared.uris.size - files.size
+            error = uiPlural(R.plurals.sms_compose_mms_overflow, laissees, MediaPrep.MAX_PARTS, laissees)
         }
-        files.forEach { attach(context, it) }
+        if (files.isEmpty()) return
+        // 🔴 Proposées, pas lues (C-M2) : la lecture et la mise au gabarit
+        // attendent le geste. Seuls le nom et la taille sont demandés.
+        proposees = files.map { PieceProposee(it, it.lastPathSegment ?: "piece-jointe") }
+        val resolver = context.applicationContext.contentResolver
+        viewModelScope.launch {
+            val lues = withContext(Dispatchers.IO) {
+                files.associateWith { LectureBornee.metadonnees(resolver, it) }
+            }
+            proposees = proposees.map { p ->
+                lues[p.uri]?.let { p.copy(nom = it.nom, taille = it.taille) } ?: p
+            }
+        }
+    }
+
+    /** « Joindre » : le geste qui autorise la lecture. */
+    fun joindreProposee(context: Context, piece: PieceProposee) {
+        proposees = proposees - piece
+        attach(context, piece.uri)
+    }
+
+    /** Écartée sans avoir été lue. */
+    fun ecarterProposee(piece: PieceProposee) {
+        proposees = proposees - piece
     }
 
     fun onRecipientChange(text: String) {
@@ -140,22 +179,41 @@ class ComposeViewModel : ViewModel() {
      */
     fun attach(context: Context, uri: Uri) {
         if (!canAttachMore) {
-            error = "Maximum ${MediaPrep.MAX_PARTS} pièces jointes."
+            error = uiPlural(R.plurals.sms_compose_max_attachments, MediaPrep.MAX_PARTS)
             return
         }
+        // Le contexte d'APPLICATION : la coroutine survit à une rotation.
+        val app = context.applicationContext
         preparing += 1
         viewModelScope.launch {
             try {
-                val media = withContext(Dispatchers.IO) { MediaPrep.read(context, uri) }
-                attachments = attachments + media
-            } catch (e: MediaPrep.TooLarge) {
-                error = "« ${e.name} » dépasse 1 Mo : le MMS ne le portera pas."
-            } catch (e: Exception) {
-                error = "Fichier illisible."
+                preparer(app, uri)
             } finally {
                 preparing -= 1
             }
         }
+    }
+
+    /** Lit et met au gabarit ; rend faux et pose [error] si ça n'a pas pris. */
+    private suspend fun preparer(context: Context, uri: Uri): Boolean = try {
+        val media = withContext(Dispatchers.IO) { MediaPrep.read(context, uri) }
+        attachments = attachments + media
+        true
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: MediaPrep.TooLarge) {
+        error = if (e.plafond > MediaPrep.MAX_BYTES) {
+            uiText(R.string.sms_compose_file_too_large_to_prepare, e.name)
+        } else {
+            uiText(R.string.sms_compose_file_too_large_for_mms, e.name)
+        }
+        false
+    } catch (e: LectureBornee.MemoireInsuffisante) {
+        error = uiText(R.string.sms_compose_out_of_memory)
+        false
+    } catch (e: Exception) {
+        error = uiText(R.string.sms_compose_file_unreadable)
+        false
     }
 
     fun removeAttachment(media: OutgoingMedia) {
@@ -166,26 +224,48 @@ class ComposeViewModel : ViewModel() {
         error = null
     }
 
-    fun send(onSent: (Int) -> Unit) {
+    fun send(context: Context, onSent: (Int) -> Unit) {
         val phone = recipient.trim()
         val body = message.trim()
         when {
-            phone.isBlank() -> { error = "Entrez un destinataire."; return }
+            phone.isBlank() -> { error = uiText(R.string.sms_compose_enter_recipient); return }
             // Une photo seule est un message complet : le corps n'est exigé
             // que lorsqu'il n'y a rien d'autre à envoyer.
-            body.isBlank() && attachments.isEmpty() -> {
-                error = "Entrez un message."; return
+            body.isBlank() && attachments.isEmpty() && proposees.isEmpty() -> {
+                error = uiText(R.string.sms_compose_enter_message); return
             }
-            selectedLineId == 0 -> { error = "Aucune ligne disponible."; return }
-            attachments.isNotEmpty() && !lineDoesMms -> {
-                error = "Cette ligne n'envoie pas de MMS."; return
+            selectedLineId == 0 -> { error = uiText(R.string.sms_compose_no_line); return }
+            (attachments.isNotEmpty() || proposees.isNotEmpty()) && !lineDoesMms -> {
+                error = uiText(R.string.sms_compose_line_no_mms); return
             }
-            preparing > 0 -> { error = "Préparation en cours…"; return }
+            preparing > 0 -> { error = uiText(R.string.sms_compose_still_preparing); return }
             sending -> return
         }
         sending = true
         error = null
+        val app = context.applicationContext
         viewModelScope.launch {
+            // Toucher « Envoyer » vaut accord pour les pièces encore proposées :
+            // elles sont lues maintenant, et une seule qui ne passe pas arrête
+            // l'envoi plutôt que de faire partir un MMS amputé.
+            if (proposees.isNotEmpty()) {
+                val aLire = proposees
+                proposees = emptyList()
+                var toutes = true
+                preparing += aLire.size
+                try {
+                    for (piece in aLire) {
+                        try {
+                            if (!preparer(app, piece.uri)) toutes = false
+                        } finally {
+                            preparing -= 1
+                        }
+                    }
+                } finally {
+                    if (!toutes || !isActive) sending = false
+                }
+                if (!toutes) return@launch
+            }
             try {
                 val media = attachments.map {
                     SendMedia(it.filename, it.contentType, it.dataB64)
@@ -195,12 +275,14 @@ class ComposeViewModel : ViewModel() {
                 if (resp.threadId > 0) {
                     onSent(resp.threadId)
                 } else {
-                    error = "Échec de l'envoi."
+                    error = uiText(R.string.sms_compose_send_failed)
                 }
             } catch (e: Exception) {
                 sending = false
+                // Le message du serveur passe tel quel : il n'est pas à nous.
                 error = e.message?.takeIf { it.isNotBlank() && it != "error" }
-                    ?: "Échec de l'envoi."
+                    ?.let { UiText.Raw(it) }
+                    ?: uiText(R.string.sms_compose_send_failed)
             }
         }
     }

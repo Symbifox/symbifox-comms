@@ -60,6 +60,11 @@ import com.bluefoxconsultant.sms.ui.phone.CallAction
 import com.bluefoxconsultant.sms.ui.speech.DictateButton
 import com.bluefoxconsultant.sms.ui.speech.appendSpoken
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.bluefoxconsultant.sms.R
+import com.bluefoxconsultant.sms.ui.asString
+import com.bluefoxconsultant.sms.ui.resolve
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,16 +81,18 @@ fun ConversationScreen(
     val listState = rememberLazyListState()
     val snackbar = remember { SnackbarHostState() }
     var linePickerOpen by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val title = vm.title?.asString().orEmpty()
 
     LaunchedEffect(vm.notice) {
         vm.notice?.let {
-            snackbar.showSnackbar(it)
+            snackbar.showSnackbar(it.resolve(context))
             vm.clearNotice()
         }
     }
     LaunchedEffect(vm.error) {
         vm.error?.let {
-            snackbar.showSnackbar(it)
+            snackbar.showSnackbar(it.resolve(context))
             vm.clearError()
         }
     }
@@ -114,7 +121,7 @@ fun ConversationScreen(
                 title = {
                     Column {
                         Text(
-                            text = vm.title.ifBlank { "Conversation" },
+                            text = title.ifBlank { stringResource(R.string.sms_conversation_title) },
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                         )
@@ -133,20 +140,20 @@ fun ConversationScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 actions = {
                     CallAction(
                         number = vm.thread?.phone.orEmpty(),
-                        display = vm.title,
+                        display = title,
                         snackbar = snackbar,
                     )
                     if (vm.lines.size > 1) {
                         IconButton(onClick = { linePickerOpen = true }) {
                             Icon(
                                 Icons.Filled.SwapHoriz,
-                                contentDescription = "Changer le numéro d'envoi",
+                                contentDescription = stringResource(R.string.sms_conversation_change_line),
                             )
                         }
                     }
@@ -202,9 +209,9 @@ fun ConversationScreen(
         LinePickerSheet(
             lines = vm.lines,
             selectedLineId = vm.selectedLineId,
-            title = "Envoyer depuis",
-            subtitle = "S'applique aux prochains messages de cette conversation.",
-            disabledReason = vm::disabledReason,
+            title = stringResource(R.string.lines_send_from),
+            subtitle = stringResource(R.string.sms_conversation_line_picker_subtitle),
+            disabledReason = { line -> vm.disabledReason(line)?.resolve(context) },
             onDismiss = { linePickerOpen = false },
             onPick = { line ->
                 vm.selectLine(line)
@@ -247,7 +254,9 @@ private fun MessageBubble(message: Message) {
         ) {
             SelectionContainer {
                 Text(
-                    text = message.body.ifBlank { if (message.isMms) "[Pièce jointe]" else "" },
+                    text = message.body.ifBlank {
+                        if (message.isMms) stringResource(R.string.sms_conversation_attachment) else ""
+                    },
                     color = textColor,
                     fontSize = 15.sp,
                 )
@@ -288,7 +297,7 @@ private fun Composer(
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it },
-                placeholder = { Text("Message texto") },
+                placeholder = { Text(stringResource(R.string.sms_conversation_composer_hint)) },
                 maxLines = 5,
                 modifier = Modifier.weight(1f),
                 trailingIcon = {
@@ -324,7 +333,7 @@ private fun Composer(
                 } else {
                     Icon(
                         Icons.AutoMirrored.Filled.Send,
-                        contentDescription = "Envoyer",
+                        contentDescription = stringResource(R.string.common_send),
                         tint = Color.White,
                     )
                 }

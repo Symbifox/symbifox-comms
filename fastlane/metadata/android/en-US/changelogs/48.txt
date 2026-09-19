@@ -1,0 +1,18 @@
+* Agenda: a meeting's attendees can be seen and changed from its sheet
+  (add by name or email, remove), with no invitation sent unless asked
+* Agenda: a "C" marks confirmed meetings, and the agenda and the minutes
+  each have their own icon, on the grid and in the list
+* Agenda: the day and time of a new meeting are picked with the Android
+  pickers; a task's deadline too
+* Reminders: the sheet shows the configured reminder and when it fires;
+  "snooze" and "seen" only appear once it has fired
+* Mail: every mailbox (inbox, unread, snoozed, sent...) carries its icon
+* Mail: a message filed on a task opens the task in the Tasks tab instead
+  of the browser
+* Bottom bar: unread messages, unread mail and overdue tasks show as a
+  badge on their tab
+* The day/night toggle sits in every module's header
+* The keyboard no longer covers the field being typed in
+* Audit fixes: a call no longer crashes the service on Android 8 and 9; no
+  data leaves through backup or device transfer; an email link opens only on
+  a tap and towards a known scheme

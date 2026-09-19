@@ -8,6 +8,9 @@ import androidx.lifecycle.viewModelScope
 import com.bluefoxconsultant.sms.data.Graph
 import com.bluefoxconsultant.sms.data.Thread
 import kotlinx.coroutines.launch
+import com.bluefoxconsultant.sms.R
+import com.bluefoxconsultant.sms.ui.UiText
+import com.bluefoxconsultant.sms.ui.uiText
 
 class ArchivedViewModel : ViewModel() {
 
@@ -15,7 +18,7 @@ class ArchivedViewModel : ViewModel() {
         private set
     var loading by mutableStateOf(true)
         private set
-    var error by mutableStateOf<String?>(null)
+    var error by mutableStateOf<UiText?>(null)
         private set
 
     init {
@@ -29,7 +32,7 @@ class ArchivedViewModel : ViewModel() {
             try {
                 threads = Graph.sms.threads(archived = 1)
             } catch (e: Exception) {
-                error = "Impossible de charger les archives."
+                error = uiText(R.string.sms_archived_load_failed)
             } finally {
                 loading = false
             }

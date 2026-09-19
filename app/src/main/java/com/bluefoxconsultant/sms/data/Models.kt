@@ -2,6 +2,8 @@ package com.bluefoxconsultant.sms.data
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import com.bluefoxconsultant.sms.R
+import com.bluefoxconsultant.sms.ui.UiText
 
 @Serializable
 data class Line(
@@ -48,8 +50,16 @@ data class Thread(
     @SerialName("is_pinned") val isPinned: Boolean = false,
     @SerialName("line_label") val lineLabel: String = "",
 ) {
-    val displayName: String
-        get() = contactName.ifBlank { partnerName.ifBlank { phone.ifBlank { "Inconnu" } } }
+    /**
+     * Le nom du correspondant tel que le serveur le connaît, sinon son numéro.
+     * Sans l'un ni l'autre, « Inconnu » dans la langue du téléphone : c'est
+     * l'écran qui le résout.
+     */
+    val displayName: UiText
+        get() = contactName.ifBlank { partnerName.ifBlank { phone } }
+            .takeIf { it.isNotBlank() }
+            ?.let { UiText.Raw(it) }
+            ?: UiText.Res(R.string.common_unknown)
 }
 
 @Serializable
@@ -180,8 +190,33 @@ data class ThreadPinRequest(
     @SerialName("thread_id") val threadId: Int,
 )
 
+/**
+ * L'inscription d'un endpoint, avec les clés WebPush de l'appareil.
+ *
+ * [p256dh] est la clé publique P-256 non compressée (65 octets) et [auth] le
+ * secret de 16 octets, les deux en base64url sans remplissage, tels que le
+ * connecteur UnifiedPush les donne. Absents (`null`, donc omis du JSON) quand
+ * le connecteur n'a pas pu en produire : le serveur pousse alors en clair,
+ * comme avant la 2.42.0. Un serveur ancien les ignore de toute façon.
+ */
 @Serializable
 data class RegisterPushRequest(
     val endpoint: String,
     @SerialName("app_version") val appVersion: String,
+    val p256dh: String? = null,
+    val auth: String? = null,
+)
+
+/**
+ * Ce que `/register_push` répond.
+ *
+ * [webpushTypes] : les types que CE serveur chiffre toujours désormais. Un
+ * serveur ancien ne répond que `{"ok": true}` : ni l'un ni l'autre, et tout ce
+ * qu'il pousse arrive en clair.
+ */
+@Serializable
+data class RegisterPushResponse(
+    val ok: Boolean = false,
+    val webpush: Boolean = false,
+    @SerialName("webpush_types") val webpushTypes: List<String> = emptyList(),
 )

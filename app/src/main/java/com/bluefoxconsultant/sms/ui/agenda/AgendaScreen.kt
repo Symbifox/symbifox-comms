@@ -25,9 +25,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.BrightnessAuto
-import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -64,18 +61,17 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bluefoxconsultant.sms.ui.BanniereFraicheur
 import com.bluefoxconsultant.sms.ui.RelirePendantQuOnRegarde
 import com.bluefoxconsultant.sms.data.AgendaEvent
-import com.bluefoxconsultant.sms.data.Graph
-import com.bluefoxconsultant.sms.data.ThemeMode
+import com.bluefoxconsultant.sms.ui.BoutonTheme
 import java.time.LocalDate
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
-import java.util.Locale
+import com.bluefoxconsultant.sms.data.Graph
+import androidx.compose.ui.res.stringResource
+import com.bluefoxconsultant.sms.R
+import com.bluefoxconsultant.sms.ui.asString
 
 /** L'heure à laquelle la grille s'ouvre : la journée de travail, pas minuit. */
 private const val OPEN_AT_HOUR = 7
-
-private val FR = Locale.forLanguageTag("fr-CA")
 
 /**
  * L'agenda, en jour ou en semaine, avec ce que Symbifox ajoute à une rencontre.
@@ -123,7 +119,7 @@ fun AgendaScreen(onOpenTasks: () -> Unit) {
         contentColor = MaterialTheme.colorScheme.onBackground,
         floatingActionButton = {
             FloatingActionButton(onClick = { vm.openComposer() }) {
-                Icon(Icons.Filled.Add, contentDescription = "Nouvelle rencontre")
+                Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.agenda_new_meeting))
             }
         },
     ) { insets ->
@@ -142,12 +138,14 @@ fun AgendaScreen(onOpenTasks: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        message,
+                        message.asString(),
                         Modifier.weight(1f),
                         color = MaterialTheme.colorScheme.onErrorContainer,
                         style = MaterialTheme.typography.bodySmall,
                     )
-                    TextButton(onClick = { vm.clearError(); vm.load() }) { Text("Réessayer") }
+                    TextButton(onClick = { vm.clearError(); vm.load() }) {
+                        Text(stringResource(R.string.common_retry))
+                    }
                 }
             }
         }
@@ -237,6 +235,11 @@ fun AgendaScreen(onOpenTasks: () -> Unit) {
             snoozeMinutes = vm.config.snoozeMinutes,
             rsvpOffert = vm.config.features.rsvp,
             busy = vm.busy,
+            api = Graph.agendaStore.ping.value.api,
+            partenaires = vm.partenaires,
+            onChercherPartenaires = { vm.chercherPartenaires(it) },
+            onAjouterParticipant = { id, inviter -> vm.ajouterParticipant(event, id, inviter) },
+            onRetirerParticipant = { vm.retirerParticipant(event, it) },
             onSnooze = { vm.snooze(event, it) },
             onDismiss = { vm.dismiss(event) },
             onRsvp = { vm.rsvp(event, it) },
@@ -253,7 +256,7 @@ private fun AgendaHeader(vm: AgendaViewModel) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { vm.step(forward = false) }) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Période précédente")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.agenda_previous_period))
                 }
                 Text(
                     titre(vm.days),
@@ -263,7 +266,7 @@ private fun AgendaHeader(vm: AgendaViewModel) {
                     overflow = TextOverflow.Ellipsis,
                 )
                 IconButton(onClick = { vm.step(forward = true) }) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowForward, "Période suivante")
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, stringResource(R.string.agenda_next_period))
                 }
             }
             Row(
@@ -274,17 +277,17 @@ private fun AgendaHeader(vm: AgendaViewModel) {
                 FilterChip(
                     selected = vm.mode == AgendaMode.DAY,
                     onClick = { vm.switchMode(AgendaMode.DAY) },
-                    label = { Text("Jour") },
+                    label = { Text(stringResource(R.string.agenda_mode_day)) },
                 )
                 FilterChip(
                     selected = vm.mode == AgendaMode.WEEK,
                     onClick = { vm.switchMode(AgendaMode.WEEK) },
-                    label = { Text("Semaine") },
+                    label = { Text(stringResource(R.string.agenda_mode_week)) },
                 )
                 FilterChip(
                     selected = vm.mode == AgendaMode.LIST,
                     onClick = { vm.switchMode(AgendaMode.LIST) },
-                    label = { Text("Liste") },
+                    label = { Text(stringResource(R.string.agenda_mode_list)) },
                 )
                 Spacer(Modifier.weight(1f))
                 BoutonTheme()
@@ -292,7 +295,7 @@ private fun AgendaHeader(vm: AgendaViewModel) {
                 // troisième mode et du bouton de thème, le libellé repassait à
                 // la ligne et coupait le mot en deux.
                 IconButton(onClick = { vm.today() }) {
-                    Icon(Icons.Filled.Today, contentDescription = "Aujourd'hui")
+                    Icon(Icons.Filled.Today, contentDescription = stringResource(R.string.agenda_today))
                 }
             }
         }
@@ -310,8 +313,7 @@ private fun FuseauAvertissement(userTz: String, zone: ZoneId) {
     if (userTz.isBlank() || userTz == zone.id) return
     Surface(color = MaterialTheme.colorScheme.secondaryContainer) {
         Text(
-            "Heures affichées dans le fuseau de l'appareil (" + zone.id +
-                "). Le compte Odoo est réglé sur " + userTz + ".",
+            stringResource(R.string.agenda_time_zone_notice, zone.id, userTz),
             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -327,6 +329,7 @@ private fun JoursEnTete(
     onOpenTasks: () -> Unit,
 ) {
     val today = LocalDate.now(zone)
+    val locale = localeAffichage()
     Row(Modifier.fillMaxWidth()) {
         Spacer(Modifier.width(44.dp))
         days.forEach { day ->
@@ -339,7 +342,7 @@ private fun JoursEnTete(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    day.dayOfWeek.getDisplayName(TextStyle.SHORT, FR).take(3),
+                    day.dayOfWeek.getDisplayName(TextStyle.SHORT, locale).take(3),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -496,22 +499,33 @@ private fun PlacerLesRencontres(
                 // dans une quinzaine de minutes, et promettre trois lignes dans
                 // un bloc d'un quart d'heure revient à n'en montrer aucune.
                 val lignes = (seg.durationMinutes / 15).coerceIn(1, 4)
-                val pastille = buildString {
-                    if (seg.event.hasAgenda) append("OdJ ")
-                    if (seg.event.hasMinutes) append("CR ")
-                    if (seg.event.snoozedUntil != null) append("⏰ ")
-                    if (seg.event.skipAgenda) append("—")
-                }.trim()
+                // Les marques sont des pictogrammes, pas des lettres : « OdJ CR »
+                // à 8 sp se lisait comme du bruit. Le « C » de confirmée se pose
+                // à côté du titre, dès la première ligne — c'est la marque qu'on
+                // cherche en balayant la semaine.
+                val m = marques(seg.event)
                 Column {
-                    Text(
-                        seg.event.name,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontSize = 10.sp,
-                        lineHeight = 12.sp,
-                        maxLines = if (lignes >= 3) 2 else 1,
-                        overflow = TextOverflow.Ellipsis,
-                        color = encre,
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    ) {
+                        if (m.confirmee) {
+                            PastilleConfirmee(
+                                encre = encre,
+                                fond = couleurDeLEvenement(seg.event),
+                                taille = 10.dp,
+                            )
+                        }
+                        Text(
+                            seg.event.name,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 10.sp,
+                            lineHeight = 12.sp,
+                            maxLines = if (lignes >= 3) 2 else 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = encre,
+                        )
+                    }
                     if (lignes >= 3) {
                         Text(
                             heure(seg.event, zone),
@@ -522,15 +536,8 @@ private fun PlacerLesRencontres(
                             color = encre,
                         )
                     }
-                    if (lignes >= 4 && pastille.isNotBlank()) {
-                        Text(
-                            pastille,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontSize = 8.sp,
-                            lineHeight = 10.sp,
-                            maxLines = 1,
-                            color = encre.copy(alpha = 0.75f),
-                        )
+                    if (lignes >= 4 && !(m.copy(confirmee = false)).vide) {
+                        PictosRencontre(m, encre = encre.copy(alpha = 0.8f), taille = 10.dp)
                     }
                 }
             }
@@ -573,17 +580,24 @@ internal fun hexOuNull(brut: String): Color? {
 }
 
 private fun heure(event: AgendaEvent, zone: ZoneId): String {
-    val f = DateTimeFormatter.ofPattern("HH:mm")
+    val f = HEURE
     val start = event.startAt(zone) ?: return ""
     val stop = event.stopAt(zone)
     return if (stop == null) f.format(start) else "${f.format(start)} – ${f.format(stop)}"
 }
 
+/** Le titre de la période, dans la langue du téléphone : voir `DatesLocales`. */
+@Composable
 private fun titre(days: List<LocalDate>): String {
-    val jour = DateTimeFormatter.ofPattern("EEEE d MMMM", FR)
-    val court = DateTimeFormatter.ofPattern("d MMM", FR)
-    if (days.size == 1) return jour.format(days.first()).replaceFirstChar { it.uppercase() }
-    return "${court.format(days.first())} – ${court.format(days.last())} ${days.last().year}"
+    val jour = formateurDate("EEEEdMMMM")
+    val court = formateurDate("dMMM")
+    if (days.size == 1) return capitaliser(jour.format(days.first()), jour.locale)
+    return stringResource(
+        R.string.agenda_title_range,
+        court.format(days.first()),
+        court.format(days.last()),
+        days.last().year,
+    )
 }
 
 
@@ -636,31 +650,3 @@ private fun minutesDepuisMinuit(zone: ZoneId): Int {
 
 /** Le rouge d'Odoo pour l'heure courante, pas celui des erreurs du thème. */
 private val TraitMaintenant = Color(0xFFEA4335)
-
-
-/**
- * Le thème, en un geste, là où l'on passe ses journées.
- *
- * Il existe déjà dans Réglages, en trois choix explicites ; ce bouton n'est pas
- * une seconde vérité, il écrit la MÊME préférence. Ce qu'il ajoute est la
- * portée : personne ne va dans Réglages pour changer la luminosité d'un écran
- * qu'il regarde en ce moment.
- *
- * Le cycle est sombre → clair → système, dans cet ordre, parce que le défaut
- * est sombre et qu'un cycle qui commence ailleurs oblige à deux appuis pour
- * revenir d'où l'on vient.
- */
-@Composable
-private fun BoutonTheme() {
-    val mode by Graph.tokenStore.themeModeFlow.collectAsStateWithLifecycle()
-    IconButton(onClick = { Graph.tokenStore.saveThemeMode(mode.suivant()) }) {
-        Icon(
-            imageVector = when (mode) {
-                ThemeMode.DARK -> Icons.Filled.DarkMode
-                ThemeMode.LIGHT -> Icons.Filled.LightMode
-                ThemeMode.SYSTEM -> Icons.Filled.BrightnessAuto
-            },
-            contentDescription = "Thème : " + mode.libelle,
-        )
-    }
-}

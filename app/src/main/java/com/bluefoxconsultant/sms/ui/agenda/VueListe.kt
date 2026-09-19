@@ -31,10 +31,9 @@ import androidx.compose.ui.unit.dp
 import com.bluefoxconsultant.sms.data.AgendaEvent
 import java.time.LocalDate
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
-
-private val FR_L = Locale.forLanguageTag("fr-CA")
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import com.bluefoxconsultant.sms.R
 
 /**
  * L'agenda à la file, pour qui préfère lire que situer.
@@ -54,6 +53,7 @@ fun VueListe(
     onOpenTasks: () -> Unit,
 ) {
     val today = LocalDate.now(zone)
+    val jourLong = formateurDate("EEEEdMMMM")
     val parJour = days.associateWith { jour ->
         events.filter { it.dayAt(zone) == jour }
             .sortedWith(compareBy({ !it.allday }, { it.start }))
@@ -63,7 +63,7 @@ fun VueListe(
     if (garnis.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
-                "Rien de prévu sur cette période.",
+                stringResource(R.string.agenda_list_empty),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -82,8 +82,7 @@ fun VueListe(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            DateTimeFormatter.ofPattern("EEEE d MMMM", FR_L).format(jour)
-                                .replaceFirstChar { it.uppercase() },
+                            capitaliser(jourLong.format(jour), jourLong.locale),
                             Modifier.weight(1f),
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = if (jour == today) FontWeight.Bold
@@ -99,7 +98,7 @@ fun VueListe(
                                 modifier = Modifier.clickable(onClick = onOpenTasks),
                             ) {
                                 Text(
-                                    "$n échéance" + if (n > 1) "s" else "",
+                                    pluralStringResource(R.plurals.agenda_deadlines_count, n, n),
                                     Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onTertiaryContainer,
@@ -137,15 +136,31 @@ private fun LigneEvenement(event: AgendaEvent, zone: ZoneId, onOpen: (AgendaEven
                 },
         )
         Column(Modifier.weight(1f)) {
-            Text(
-                event.name,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            val m = marques(event)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (m.confirmee) {
+                    PastilleConfirmee(
+                        encre = MaterialTheme.colorScheme.primary,
+                        fond = MaterialTheme.colorScheme.onPrimary,
+                        taille = 14.dp,
+                    )
+                }
+                Text(
+                    event.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             val details = buildList {
-                add(if (event.allday) "Journée entière" else heureListe(event, zone))
+                add(
+                    if (event.allday) stringResource(R.string.meeting_all_day)
+                    else heureListe(event, zone),
+                )
                 if (event.location.isNotBlank()) add(event.location)
                 if (event.calendar.isNotBlank()) add(event.calendar)
             }
@@ -156,28 +171,20 @@ private fun LigneEvenement(event: AgendaEvent, zone: ZoneId, onOpen: (AgendaEven
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            val pastilles = buildList {
-                if (event.hasAgenda) add("OdJ")
-                if (event.hasMinutes) add("CR")
-                if (event.skipAgenda) add("sans OdJ")
-                if (event.snoozedUntil != null) add("reporté")
-            }
-            if (pastilles.isNotEmpty()) {
-                Row(
-                    Modifier.padding(top = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+            // Les mêmes marques que sur la grille, en pictogrammes : ce qu'on a
+            // appris à reconnaître sur l'une se retrouve tel quel sur l'autre.
+            if (!(m.copy(confirmee = false)).vide) {
+                Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier.padding(top = 4.dp),
                 ) {
-                    pastilles.forEach { mot ->
-                        Surface(
-                            color = MaterialTheme.colorScheme.secondaryContainer,
-                            shape = RoundedCornerShape(6.dp),
-                        ) {
-                            Text(
-                                mot,
-                                Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                            )
-                        }
+                    Row(Modifier.padding(horizontal = 6.dp, vertical = 2.dp)) {
+                        PictosRencontre(
+                            m,
+                            encre = MaterialTheme.colorScheme.onSecondaryContainer,
+                            taille = 14.dp,
+                        )
                     }
                 }
             }
@@ -195,7 +202,7 @@ private fun LigneEvenement(event: AgendaEvent, zone: ZoneId, onOpen: (AgendaEven
 }
 
 private fun heureListe(event: AgendaEvent, zone: ZoneId): String {
-    val f = DateTimeFormatter.ofPattern("HH:mm")
+    val f = HEURE
     val start = event.startAt(zone) ?: return ""
     val stop = event.stopAt(zone)
     return if (stop == null) f.format(start) else "${f.format(start)} – ${f.format(stop)}"

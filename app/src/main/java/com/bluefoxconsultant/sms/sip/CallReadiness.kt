@@ -18,6 +18,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.ui.res.stringResource
+import com.bluefoxconsultant.sms.R
 
 /**
  * Ce qui manque pour que le combiné SONNE, par opposition à ce qui manque pour
@@ -95,15 +97,21 @@ fun settingsIntentFor(context: Context, gap: CallGap): Intent? {
     }?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 }
 
-/** Où se trouve le réglage, en toutes lettres, quand l'écran ne s'ouvre pas. */
-fun cheminReglage(gap: CallGap): String = when (gap) {
-    CallGap.FULL_SCREEN ->
-        "Paramètres › Applications › Symbifox Mobile › Notifications › " +
-            "Notifications en plein écran"
-    CallGap.HIBERNATION ->
-        "Paramètres › Applications › Symbifox Mobile › Application inutilisée › " +
-            "désactiver la mise en pause"
-}
+/**
+ * Où se trouve le réglage, en toutes lettres, quand l'écran ne s'ouvre pas.
+ *
+ * Dans la langue de l'app, qui est celle du téléphone : c'est donc aussi celle
+ * des écrans de réglages qu'on nomme. Le nom de l'app vient de `app_name`, le
+ * même que celui qu'Android affiche dans la liste des applications.
+ */
+@Composable
+fun cheminReglage(gap: CallGap): String = stringResource(
+    when (gap) {
+        CallGap.FULL_SCREEN -> R.string.call_gap_path_full_screen
+        CallGap.HIBERNATION -> R.string.call_gap_path_hibernation
+    },
+    stringResource(R.string.app_name),
+)
 
 /**
  * Taire une alerte que le système continue de signaler à tort.

@@ -13,6 +13,13 @@ data class AgendaPing(
     val ok: Boolean = false,
     val enabled: Boolean = false,
     val version: String = "",
+    /**
+     * Le niveau de la surface. 3 apporte le rappel configuré, les participants
+     * modifiables, la recherche de contacts et la tâche par identifiant ; 4 la
+     * recherche dans mes tâches (#25734). Une instance qui répond moins garde
+     * l'ancien comportement écran par écran.
+     */
+    val api: Int = 0,
 )
 
 /** Ce que le serveur offre à cette session. */
@@ -67,6 +74,15 @@ data class AgendaEvent(
     @SerialName("agenda_state") val agendaState: String = "none",
     @SerialName("minutes_state") val minutesState: String = "none",
     /**
+     * Le rappel configuré, tel que le serveur le lit, et s'il a déjà sonné.
+     * Le verdict vient du SERVEUR : c'est son horloge qui fait sonner les
+     * rappels, et l'écart de fuseau entre le compte et l'appareil ne doit pas
+     * faire mentir la fiche. Une instance trop ancienne n'envoie rien : liste
+     * vide et `false`, que l'écran lit comme « l'ancien comportement ».
+     */
+    val alarms: List<AgendaAlarm> = emptyList(),
+    @SerialName("reminder_fired") val reminderFired: Boolean = false,
+    /**
      * Les couleurs viennent du SERVEUR, calculées avec la règle d'Odoo.
      * Les recalculer ici obligerait à recopier une palette de 56 tons et la
      * formule `((clé - 1) % 55) + 1`, donc à les corriger à deux endroits.
@@ -81,6 +97,8 @@ data class AgendaEvent(
     val description: String = "",
     val organizer: String = "",
     @SerialName("attendee_list") val attendeeList: List<AgendaAttendee> = emptyList(),
+    @SerialName("organizer_partner_id") val organizerPartnerId: Int = 0,
+    @SerialName("can_edit_attendees") val canEditAttendees: Boolean = false,
     val agenda: AgendaOdj? = null,
     val minutes: AgendaMinutes? = null,
 ) {
@@ -112,6 +130,33 @@ data class AgendaAttendee(
     val name: String = "",
     val state: String = "",
     @SerialName("is_me") val isMe: Boolean = false,
+    @SerialName("partner_id") val partnerId: Int = 0,
+    val email: String = "",
+)
+
+/**
+ * Un rappel de type notification. [minutes] avant le début ; [notifyAt] est
+ * l'instant où il sonne, en UTC, calculé par le serveur.
+ */
+@Serializable
+data class AgendaAlarm(
+    val name: String = "",
+    val minutes: Int = 0,
+    @SerialName("notify_at") val notifyAt: String? = null,
+)
+
+/** Un contact qu'on peut inviter, tel que `/partners` le rend. */
+@Serializable
+data class AgendaPartner(
+    val id: Int = 0,
+    val name: String = "",
+    val email: String = "",
+)
+
+@Serializable
+data class AgendaPartnersResponse(
+    val ok: Boolean = false,
+    val partners: List<AgendaPartner> = emptyList(),
 )
 
 @Serializable
@@ -239,4 +284,14 @@ data class AgendaTaskOptions(
 data class AgendaTaskResponse(
     val ok: Boolean = false,
     val task: AgendaTask? = null,
+)
+
+/** Mes tâches ouvertes qui répondent à une recherche (api 4, #25734). */
+@Serializable
+data class AgendaTaskSearchResponse(
+    val ok: Boolean = false,
+    val query: String = "",
+    val tasks: List<AgendaTask> = emptyList(),
+    /** Il en reste au-delà de ce qui est rendu : préciser la recherche. */
+    val more: Boolean = false,
 )

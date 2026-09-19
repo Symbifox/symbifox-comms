@@ -1,8 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Base window theme; Compose draws the actual UI. No ActionBar. -->
+    <!-- Thème de fenêtre ; Compose dessine l'interface. Pas de barre d'action.
+
+         🔴 `windowBackground` était BLANC figé : sur un téléphone en mode
+         sombre, l'application ouvrait un carré blanc le temps du premier cadre.
+         `fond_fenetre` suit le mode par `values-night` (BF #25765).
+
+         🔴 `statusBarColor` était `@color/bf_blue` — le bleu de Blue Fox, figé,
+         alors que l'accent de l'application vient de l'instance à laquelle elle
+         parle. Sur un locataire qui n'est pas Blue Fox, la barre d'état était de
+         la mauvaise couleur ; sur Blue Fox, elle était du bon bleu au-dessus
+         d'une interface peinte en bleu Symbifox. C'est `MainActivity` qui rend
+         aux barres la couleur de l'accent, bord à bord. -->
     <style name="Theme.BfSms" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:statusBarColor">@color/bf_blue</item>
-        <item name="android:windowBackground">@color/white</item>
+        <item name="android:windowBackground">@color/fond_fenetre</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 </resources>

@@ -29,6 +29,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bluefoxconsultant.sms.data.Line
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
+import androidx.compose.ui.res.stringResource
+import com.bluefoxconsultant.sms.R
 
 /**
  * Picks which of the account's numbers to act from.
@@ -46,7 +48,7 @@ import com.bluefoxconsultant.sms.ui.theme.BrandAccent
 fun LinePickerSheet(
     lines: List<Line>,
     selectedLineId: Int?,
-    title: String = "Envoyer depuis",
+    title: String = stringResource(R.string.lines_send_from),
     subtitle: String? = null,
     disabledReason: (Line) -> String? = { null },
     onDismiss: () -> Unit,
@@ -124,7 +126,7 @@ private fun LineRow(
             )
         }
         if (selected) {
-            Icon(Icons.Filled.Check, contentDescription = "Sélectionné", tint = BrandAccent)
+            Icon(Icons.Filled.Check, contentDescription = stringResource(R.string.common_selected), tint = BrandAccent)
         }
     }
 }

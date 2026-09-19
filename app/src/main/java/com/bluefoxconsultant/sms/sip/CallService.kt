@@ -34,7 +34,16 @@ class CallService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val peer = intent?.getStringExtra(EXTRA_PEER).orEmpty()
-        startForeground(NOTIF_ID, notification(peer), typeOrZero())
+        // 🔴 La surcharge à trois arguments n'existe qu'à partir d'Android 10 :
+        // l'appeler sur Android 8 ou 9 lève NoSuchMethodError AVANT que
+        // `typeOrZero()` ait pu rendre 0. Relevé par Lint (NewApi) à l'audit
+        // du 2026-09-08 : tout appel plantait le service sur ces versions.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIF_ID, notification(peer), typeOrZero())
+        } else {
+            @Suppress("DEPRECATION")
+            startForeground(NOTIF_ID, notification(peer))
+        }
         // NOT_STICKY : si le système nous tue quand même, l'appel est de toute
         // façon perdu. Redémarrer un service sans appel n'afficherait qu'une
         // notification fantôme.
@@ -50,14 +59,19 @@ class CallService : Service() {
 
     private fun notification(peer: String): android.app.Notification {
         val nm = getSystemService(NotificationManager::class.java)
-        if (nm?.getNotificationChannel(CHANNEL) == null) {
-            // Silencieux et discret : la notification dit qu'un appel est en
-            // cours, elle n'a rien à annoncer. Le téléphone sonne déjà.
-            nm?.createNotificationChannel(
-                NotificationChannel(CHANNEL, "Appel en cours", NotificationManager.IMPORTANCE_LOW)
-                    .apply { description = "Garde l'appel actif quand l'app n'est pas à l'écran" },
-            )
-        }
+        // Silencieux et discret : la notification dit qu'un appel est en
+        // cours, elle n'a rien à annoncer. Le téléphone sonne déjà.
+        // ⚠️ Recréé à chaque fois, sans garde « déjà là » : un canal existant ne
+        // reprend que son nom et sa description, dans la langue du moment. Une
+        // garde figeait le nom français chez qui a déjà l'app ; l'importance et
+        // ce que la personne a réglé restent, eux, intouchés.
+        nm?.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL,
+                getString(R.string.call_service_in_progress),
+                NotificationManager.IMPORTANCE_LOW,
+            ).apply { description = getString(R.string.call_service_channel_description) },
+        )
         val open = PendingIntent.getActivity(
             this,
             0,
@@ -68,8 +82,8 @@ class CallService : Service() {
         )
         return NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_sms)
-            .setContentTitle("Appel en cours")
-            .setContentText(peer.ifBlank { "Symbifox Mobile" })
+            .setContentTitle(getString(R.string.call_service_in_progress))
+            .setContentText(peer.ifBlank { getString(R.string.app_name) })
             .setContentIntent(open)
             .setOngoing(true)
             .setSilent(true)

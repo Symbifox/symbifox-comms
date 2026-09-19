@@ -10,6 +10,9 @@ import com.bluefoxconsultant.sms.data.Line
 import com.bluefoxconsultant.sms.data.Message
 import com.bluefoxconsultant.sms.data.Thread
 import kotlinx.coroutines.launch
+import com.bluefoxconsultant.sms.R
+import com.bluefoxconsultant.sms.ui.UiText
+import com.bluefoxconsultant.sms.ui.uiText
 
 class ConversationViewModel(private val threadId: Int) : ViewModel() {
 
@@ -25,9 +28,9 @@ class ConversationViewModel(private val threadId: Int) : ViewModel() {
         private set
     var sending by mutableStateOf(false)
         private set
-    var error by mutableStateOf<String?>(null)
+    var error by mutableStateOf<UiText?>(null)
         private set
-    var notice by mutableStateOf<String?>(null)
+    var notice by mutableStateOf<UiText?>(null)
         private set
 
     /** The account's numbers, for the "send from" picker. */
@@ -51,8 +54,8 @@ class ConversationViewModel(private val threadId: Int) : ViewModel() {
             ?: thread?.lineLabel.orEmpty()
 
     /** SMS-capable only — a voice-only DID can't carry a text. */
-    fun disabledReason(line: Line): String? =
-        if (line.smsEnabled) null else "Pas de texto sur cette ligne"
+    fun disabledReason(line: Line): UiText? =
+        if (line.smsEnabled) null else uiText(R.string.sms_line_no_text)
 
     init {
         lines = Graph.tokenStore.lines
@@ -70,7 +73,7 @@ class ConversationViewModel(private val threadId: Int) : ViewModel() {
                 if (lines.isEmpty()) refreshLines()
                 Graph.sms.markRead(threadId)
             } catch (e: Exception) {
-                error = "Impossible de charger la conversation."
+                error = uiText(R.string.sms_conversation_load_failed)
             } finally {
                 loading = false
             }
@@ -112,7 +115,7 @@ class ConversationViewModel(private val threadId: Int) : ViewModel() {
     /** Choose the number the next message goes out from. */
     fun selectLine(line: Line) {
         selectedLineId = line.id
-        notice = "Prochain envoi depuis ${line.label.ifBlank { line.did }}"
+        notice = uiText(R.string.sms_conversation_next_send_from, line.label.ifBlank { line.did })
     }
 
     fun send(text: String) {
@@ -127,7 +130,7 @@ class ConversationViewModel(private val threadId: Int) : ViewModel() {
                     messages = messages + resp.message
                 }
             } catch (e: Exception) {
-                error = "Échec de l'envoi du message."
+                error = uiText(R.string.sms_conversation_send_failed)
             } finally {
                 sending = false
             }
@@ -142,6 +145,7 @@ class ConversationViewModel(private val threadId: Int) : ViewModel() {
         notice = null
     }
 
-    val title: String
-        get() = thread?.displayName ?: ""
+    /** Nul tant que le fil n'est pas chargé : l'écran met alors « Conversation ». */
+    val title: UiText?
+        get() = thread?.displayName
 }

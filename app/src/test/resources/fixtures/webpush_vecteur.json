@@ -1,0 +1,8 @@
+{
+ "recipient_private_key_b64url": "JMvRX-NPp_TVcPHTwbgj8n1YQkSv50BWPQPjSTgc-VI",
+ "recipient_public_key_b64url": "BJR4qkfzM0UNkVjDeC983UBKvf7vrEl1fe3GaNjp1M2Me24NDov3HIq8inQExqqa3y6JudzDcxPhi10JX4qwOr0",
+ "auth_b64url": "KilcESeCYgpx6KaQ59yXJQ",
+ "ciphertext_b64url": "IC2zepyfQB-DKd4euQcD6wAAEABBBJQXznORRGlOjkkI2rfu4LZ7En6b0LIiCkCQdY_4LHLEOKUb3J6qLDY6k8uprPHIzaA2fIh7NRUI7XnF5DXqFwV8W_iHSYG5AC7o2qS8lXdY3VxJnbBWvQx1gJxvbhKEekxzyB9KcM-sEWQful8VlRTFN9kqcFjU8N9SdNJ7q5WhAJPdCFqmdzKcmEGaK-4vZV91mGEm8-4XroM4EuPoiZurCEXc6MxdIei1IeZTE_6YmPHPcPq7x4Q",
+ "plaintext_utf8": "{\"type\": \"sms\", \"title\": \"Vecteur d essai\", \"body\": \"Bonjour é ✓\", \"thread_id\": 42, \"message_id\": 7}",
+ "generator": "http_ece ? aes128gcm, rs par defaut (4096), cle ephemere P-256"
+}

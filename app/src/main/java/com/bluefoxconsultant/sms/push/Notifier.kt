@@ -54,34 +54,56 @@ object Notifier {
 
     fun mailNotifId(emailId: Int): Int = "mail-$emailId".hashCode()
 
+    /**
+     * Ce que l'écran verrouillé montre à la place : qu'il y a quelque chose,
+     * pas quoi.
+     *
+     * 🔴 Audit du 2026-09-08, C-F3 : le corps d'un texto et l'objet d'un
+     * courriel s'affichaient par-dessus le verrouillage, lisibles par quiconque
+     * a le téléphone sous les yeux. ⚠️ Android ne substitue cette version que
+     * si l'écran verrouillé est réglé pour masquer le contenu sensible (réglage
+     * du système, pas de l'app) ; réglé pour tout montrer, il montre tout.
+     */
+    private fun versionPublique(context: Context, canal: String, titre: String) =
+        NotificationCompat.Builder(context, canal)
+            .setSmallIcon(R.drawable.ic_stat_sms)
+            .setColor(BF_BLUE)
+            .setContentTitle(titre)
+            .build()
+
+    /**
+     * ⚠️ Recréé à CHAQUE affichage, sans tester s'il existe : le nom et la
+     * description d'un canal s'affichent dans les réglages d'Android, dans la
+     * langue du téléphone, et un canal déjà créé garde son nom tant qu'on ne le
+     * recrée pas. Le garde-fou d'avant figeait le français chez tous ceux qui
+     * avaient déjà l'app. Pour un canal existant, Android ne reprend QUE le nom
+     * et la description : l'importance et ce que la personne a réglé restent.
+     */
     private fun ensureChannel(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
-        if (nm.getNotificationChannel(CHANNEL_ID) == null) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Messages SMS",
-                NotificationManager.IMPORTANCE_HIGH,
-            ).apply {
-                description = "Notifications de nouveaux textos"
-            }
-            nm.createNotificationChannel(channel)
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            context.getString(R.string.notif_channel_sms),
+            NotificationManager.IMPORTANCE_HIGH,
+        ).apply {
+            description = context.getString(R.string.notif_channel_sms_description)
         }
+        nm.createNotificationChannel(channel)
     }
 
     private fun ensureMailChannel(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
-        if (nm.getNotificationChannel(CHANNEL_MAIL) == null) {
-            // Its own channel so mail and SMS can be tuned separately — mail
-            // arrives in bursts and most people want it quieter.
-            val channel = NotificationChannel(
-                CHANNEL_MAIL,
-                "Courriel",
-                NotificationManager.IMPORTANCE_DEFAULT,
-            ).apply {
-                description = "Notifications de nouveaux courriels"
-            }
-            nm.createNotificationChannel(channel)
+        // Its own channel so mail and SMS can be tuned separately — mail
+        // arrives in bursts and most people want it quieter.
+        // Recréé à chaque fois, pour la langue : voir `ensureChannel`.
+        val channel = NotificationChannel(
+            CHANNEL_MAIL,
+            context.getString(R.string.notif_channel_mail),
+            NotificationManager.IMPORTANCE_DEFAULT,
+        ).apply {
+            description = context.getString(R.string.notif_channel_mail_description)
         }
+        nm.createNotificationChannel(channel)
     }
 
     fun show(context: Context, title: String, body: String, threadId: Int, messageId: Int) {
@@ -100,7 +122,7 @@ object Notifier {
         )
 
         val remoteInput = RemoteInput.Builder(ReplyReceiver.KEY_REPLY)
-            .setLabel("Répondre")
+            .setLabel(context.getString(R.string.notif_reply))
             .build()
         val replyIntent = Intent(context, ReplyReceiver::class.java).apply {
             putExtra(EXTRA_THREAD_ID, threadId)
@@ -112,7 +134,9 @@ object Notifier {
             replyIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
         )
-        val replyAction = NotificationCompat.Action.Builder(R.drawable.ic_stat_sms, "Répondre", replyPi)
+        val replyAction = NotificationCompat.Action.Builder(
+            R.drawable.ic_stat_sms, context.getString(R.string.notif_reply), replyPi,
+        )
             .addRemoteInput(remoteInput)
             .setAllowGeneratedReplies(true)
             .build()
@@ -140,6 +164,8 @@ object Notifier {
             .setContentIntent(contentPi)
             .setDeleteIntent(deletePi)
             .addAction(replyAction)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(versionPublique(context, CHANNEL_ID, context.getString(R.string.common_new_message)))
             .build()
 
         try {
@@ -151,18 +177,17 @@ object Notifier {
 
     private fun ensureGenfoxChannel(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
-        if (nm.getNotificationChannel(CHANNEL_GENFOX) == null) {
-            // Default importance, not high: an answer you asked for a minute
-            // ago is worth a glance, not an interruption.
-            val channel = NotificationChannel(
-                CHANNEL_GENFOX,
-                "Gen",
-                NotificationManager.IMPORTANCE_DEFAULT,
-            ).apply {
-                description = "Réponses de l'assistant"
-            }
-            nm.createNotificationChannel(channel)
+        // Default importance, not high: an answer you asked for a minute
+        // ago is worth a glance, not an interruption.
+        // Recréé à chaque fois, pour la langue : voir `ensureChannel`.
+        val channel = NotificationChannel(
+            CHANNEL_GENFOX,
+            context.getString(R.string.notif_channel_gen),
+            NotificationManager.IMPORTANCE_DEFAULT,
+        ).apply {
+            description = context.getString(R.string.notif_channel_gen_description)
         }
+        nm.createNotificationChannel(channel)
     }
 
     /** The assistant finished a turn the phone did not stay to watch. */
@@ -199,7 +224,7 @@ object Notifier {
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_sms)
             .setColor(BF_BLUE)
-            .setContentText("Envoyé")
+            .setContentText(context.getString(R.string.notif_sent))
             .setAutoCancel(true)
             .setTimeoutAfter(3000)
             .build()
@@ -251,10 +276,12 @@ object Notifier {
             .setCategory(NotificationCompat.CATEGORY_EMAIL)
             .setAutoCancel(true)
             .setContentIntent(contentPi)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(versionPublique(context, CHANNEL_MAIL, context.getString(R.string.common_new_email)))
 
         if (emailId > 0) {
             val remoteInput = RemoteInput.Builder(MailReplyReceiver.KEY_REPLY)
-                .setLabel("Répondre")
+                .setLabel(context.getString(R.string.notif_reply))
                 .build()
             val replyIntent = Intent(context, MailReplyReceiver::class.java).apply {
                 putExtra(EXTRA_EMAIL_ID, emailId)
@@ -267,7 +294,9 @@ object Notifier {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
             )
             builder.addAction(
-                NotificationCompat.Action.Builder(R.drawable.ic_stat_sms, "Répondre", replyPi)
+                NotificationCompat.Action.Builder(
+                    R.drawable.ic_stat_sms, context.getString(R.string.notif_reply), replyPi,
+                )
                     .addRemoteInput(remoteInput)
                     .setAllowGeneratedReplies(true)
                     .build(),
@@ -299,7 +328,7 @@ object Notifier {
         val notification = NotificationCompat.Builder(context, CHANNEL_MAIL)
             .setSmallIcon(R.drawable.ic_stat_sms)
             .setColor(BF_BLUE)
-            .setContentText("Réponse envoyée")
+            .setContentText(context.getString(R.string.notif_reply_sent))
             .setAutoCancel(true)
             .setTimeoutAfter(3000)
             .build()
@@ -312,18 +341,17 @@ object Notifier {
 
     private fun ensureHostingChannel(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
-        if (nm.getNotificationChannel(CHANNEL_HOSTING) == null) {
-            // Importance haute : un service à terre est la seule chose que
-            // cette app ait à dire qui ne puisse pas attendre le matin.
-            val channel = NotificationChannel(
-                CHANNEL_HOSTING,
-                "Hébergement",
-                NotificationManager.IMPORTANCE_HIGH,
-            ).apply {
-                description = "Services hors ligne, disques pleins, sauvegardes en retard"
-            }
-            nm.createNotificationChannel(channel)
+        // Importance haute : un service à terre est la seule chose que
+        // cette app ait à dire qui ne puisse pas attendre le matin.
+        // Recréé à chaque fois, pour la langue : voir `ensureChannel`.
+        val channel = NotificationChannel(
+            CHANNEL_HOSTING,
+            context.getString(R.string.notif_hosting),
+            NotificationManager.IMPORTANCE_HIGH,
+        ).apply {
+            description = context.getString(R.string.notif_channel_hosting_description)
         }
+        nm.createNotificationChannel(channel)
     }
 
     /**
@@ -355,12 +383,17 @@ object Notifier {
         val style = NotificationCompat.InboxStyle()
         lines.forEach { style.addLine(it) }
         if (alerts.count > lines.size) {
-            style.setSummaryText("et ${alerts.count - lines.size} de plus")
+            val reste = alerts.count - lines.size
+            style.setSummaryText(
+                context.resources.getQuantityString(R.plurals.notif_hosting_more, reste, reste),
+            )
         }
         val notification = NotificationCompat.Builder(context, CHANNEL_HOSTING)
             .setSmallIcon(R.drawable.ic_stat_sms)
             .setColor(if (alerts.isDown) ALERT_RED else ALERT_AMBER)
-            .setContentTitle(if (alerts.isDown) "Hébergement — panne" else "Hébergement")
+            .setContentTitle(
+                context.getString(if (alerts.isDown) R.string.notif_hosting_down else R.string.notif_hosting),
+            )
             .setContentText(alerts.summary)
             .setStyle(style)
             .setCategory(NotificationCompat.CATEGORY_ERROR)

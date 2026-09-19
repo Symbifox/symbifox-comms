@@ -33,6 +33,9 @@ class SettingsViewModel : ViewModel() {
             // made them; neither should greet the next person to sign in.
             Graph.mailCache.clear()
             Graph.outbox.clear()
+            // Et les envois dont le délai courait : leur bandeau n'a plus rien
+            // à annuler, et ne doit pas annoncer « envoyé » (#25764).
+            Graph.envois.reinitialiser()
             // Un brouillon porte le TEXTE de la session qui l'a écrit : le
             // laisser, c'est ouvrir le courriel d'hier à la personne suivante.
             Graph.drafts.clear()

@@ -1,0 +1,20 @@
+* Agenda : les participants d'une rencontre se voient et se modifient
+  depuis la fiche (ajout par nom ou courriel, retrait), sans envoyer
+  d'invitation à moins de le demander
+* Agenda : un « C » marque les rencontres confirmées, et l'ordre du jour et
+  le compte rendu ont chacun leur pictogramme, sur la grille comme en liste
+* Agenda : le jour et l'heure d'une nouvelle rencontre se choisissent dans
+  les sélecteurs Android ; l'échéance d'une tâche aussi
+* Rappels : la fiche montre le rappel configuré et l'heure où il sonne ;
+  les gestes « reporter » et « vu » n'apparaissent qu'une fois qu'il a sonné
+* Courriel : chaque boîte (réception, non lus, reportés, envoyés…) porte
+  son pictogramme
+* Courriel : un message classé sur une tâche ouvre la tâche dans l'onglet
+  Tâches plutôt que dans le navigateur
+* Barre du bas : les non-lus des messages et du courriel et les tâches en
+  retard s'affichent en pastille sur leur onglet
+* Le bouton jour/nuit est dans l'en-tête de chaque module
+* Le clavier ne passe plus par-dessus le champ où l'on écrit
+* Correctifs d'audit : un appel ne plante plus le service sur Android 8 et 9 ;
+  aucune donnée ne sort par sauvegarde ou transfert d'appareil ; un lien de
+  courriel ne s'ouvre que sur un geste et vers un schéma connu

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -37,9 +38,8 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.util.Locale
-
-private val FR_FT = Locale.forLanguageTag("fr-CA")
+import androidx.compose.ui.res.stringResource
+import com.bluefoxconsultant.sms.R
 
 /**
  * La fiche d'une tâche, modifiable sur place.
@@ -61,18 +61,23 @@ fun FicheTache(
     busy: Boolean,
     onWrite: (String) -> Unit,
     onComplete: (Boolean) -> Unit,
+    onCancel: () -> Unit,
     onOuvrirOdoo: () -> Unit,
     onClose: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var choixDate by remember { mutableStateOf(false) }
+    var dateChoisie by remember { mutableStateOf<LocalDate?>(null) }
     var titre by remember(task.id) { mutableStateOf(task.name) }
     LaunchedEffect(task.name) { titre = task.name }
+    val jourLong = formateurDate("EEEEdMMMM")
 
     ModalBottomSheet(onDismissRequest = onClose, sheetState = sheetState) {
         Column(
             Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
+                .imePadding()
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -80,14 +85,14 @@ fun FicheTache(
             OutlinedTextField(
                 value = titre,
                 onValueChange = { titre = it },
-                label = { Text("Titre") },
+                label = { Text(stringResource(R.string.common_title)) },
                 modifier = Modifier.fillMaxWidth(),
             )
             if (titre.trim() != task.name && titre.isNotBlank()) {
                 TextButton(
                     enabled = !busy,
                     onClick = { onWrite("""{"name":${jsonTexte(titre.trim())}}""") },
-                ) { Text("Enregistrer le titre") }
+                ) { Text(stringResource(R.string.task_save_title)) }
             }
 
             Text(
@@ -103,26 +108,38 @@ fun FicheTache(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Button(enabled = !busy, onClick = { onComplete(!task.done) }) {
-                    Text(if (task.done) "Rouvrir" else "Marquer faite")
+                    Text(
+                        stringResource(if (task.done) R.string.task_reopen else R.string.task_mark_done),
+                    )
+                }
+                // Annuler, à côté de Faite (#25734) : une tâche qui n'a plus
+                // lieu d'être n'a pas été faite, et la clore « faite » fausse
+                // ce qu'on relit ensuite. L'état existait dans les pastilles de
+                // statut plus bas, sans qu'on l'y cherche. Pas de confirmation :
+                // l'écran offre de rétablir.
+                if (!task.done) {
+                    OutlinedButton(enabled = !busy, onClick = onCancel) {
+                        Text(stringResource(R.string.task_cancel))
+                    }
                 }
                 if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
             }
 
             HorizontalDivider()
-            Text("Échéance", style = MaterialTheme.typography.labelLarge)
+            Text(stringResource(R.string.task_deadline), style = MaterialTheme.typography.labelLarge)
             Text(
+                // La date dans la langue du téléphone, l'heure en chiffres : voir `DatesLocales`.
                 task.deadlineAt(zone)?.let {
-                    DateTimeFormatter.ofPattern("EEEE d MMMM, HH:mm", FR_FT).format(it)
-                        .replaceFirstChar { c -> c.uppercase() }
-                } ?: "Aucune",
+                    capitaliser(jourLong.format(it), jourLong.locale) + ", " + HEURE.format(it)
+                } ?: stringResource(R.string.task_deadline_none),
                 style = MaterialTheme.typography.bodyMedium,
             )
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf(
-                    "Aujourd'hui" to 0L,
-                    "Demain" to 1L,
-                    "Dans 3 j" to 3L,
-                    "Dans 1 sem." to 7L,
+                    R.string.agenda_today to 0L,
+                    R.string.task_deadline_tomorrow to 1L,
+                    R.string.task_deadline_in_3_days to 3L,
+                    R.string.task_deadline_in_1_week to 7L,
                 ).forEach { (libelle, jours) ->
                     OutlinedButton(
                         enabled = !busy,
@@ -134,18 +151,24 @@ fun FicheTache(
                                 .atTime(LocalTime.of(17, 0)).atZone(zone).toInstant()
                             onWrite("""{"date_deadline":${jsonTexte(horodatage(quand))}}""")
                         },
-                    ) { Text(libelle) }
+                    ) { Text(stringResource(libelle)) }
+                }
+                // Le sélecteur d'Android pour tout ce que les quatre raccourcis
+                // ne couvrent pas : une date précise, une heure qui n'est pas
+                // 17:00. La date d'abord, l'heure ensuite, puis l'écriture.
+                OutlinedButton(enabled = !busy, onClick = { choixDate = true }) {
+                    Text(stringResource(R.string.task_deadline_pick))
                 }
                 if (task.deadline != null) {
                     OutlinedButton(
                         enabled = !busy,
                         onClick = { onWrite("""{"date_deadline":false}""") },
-                    ) { Text("Retirer") }
+                    ) { Text(stringResource(R.string.common_remove)) }
                 }
             }
 
             HorizontalDivider()
-            Text("Priorité", style = MaterialTheme.typography.labelLarge)
+            Text(stringResource(R.string.task_priority), style = MaterialTheme.typography.labelLarge)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 options.priorities.forEach { p ->
                     FilterChip(
@@ -159,7 +182,7 @@ fun FicheTache(
 
             if (options.states.isNotEmpty()) {
                 HorizontalDivider()
-                Text("État", style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.task_status), style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     options.states.forEach { e ->
                         FilterChip(
@@ -174,7 +197,7 @@ fun FicheTache(
 
             if (options.stages.isNotEmpty()) {
                 HorizontalDivider()
-                Text("Étape", style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.task_stage), style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     options.stages.forEach { e ->
                         FilterChip(
@@ -189,7 +212,7 @@ fun FicheTache(
 
             if (options.tags.isNotEmpty()) {
                 HorizontalDivider()
-                Text("Étiquettes", style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.task_tags), style = MaterialTheme.typography.labelLarge)
                 val posees = task.tags.map { it.id }.toSet()
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     // Les étiquettes déjà posées d'abord : sur 185, chercher la
@@ -214,8 +237,26 @@ fun FicheTache(
             }
 
             HorizontalDivider()
-            TextButton(onClick = onOuvrirOdoo) { Text("Ouvrir dans Odoo") }
+            TextButton(onClick = onOuvrirOdoo) { Text(stringResource(R.string.common_open_in_odoo)) }
         }
+    }
+
+    if (choixDate) {
+        DialogueDate(
+            initiale = task.deadlineAt(zone)?.toLocalDate() ?: LocalDate.now(zone),
+            onChoisir = { dateChoisie = it },
+            onFermer = { choixDate = false },
+        )
+    }
+    dateChoisie?.let { jour ->
+        DialogueHeure(
+            initiale = task.deadlineAt(zone)?.toLocalTime() ?: LocalTime.of(17, 0),
+            onChoisir = { heure ->
+                val quand = jour.atTime(heure).atZone(zone).toInstant()
+                onWrite("""{"date_deadline":${jsonTexte(horodatage(quand))}}""")
+            },
+            onFermer = { dateChoisie = null },
+        )
     }
 }
 

@@ -62,9 +62,14 @@ import com.bluefoxconsultant.sms.data.MediaPrep
 import com.bluefoxconsultant.sms.data.OutgoingMedia
 import com.bluefoxconsultant.sms.data.SharedContent
 import com.bluefoxconsultant.sms.ui.phone.CallAction
+import com.bluefoxconsultant.sms.ui.share.PiecesProposees
 import com.bluefoxconsultant.sms.ui.speech.DictateButton
 import com.bluefoxconsultant.sms.ui.speech.appendSpoken
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import com.bluefoxconsultant.sms.R
+import com.bluefoxconsultant.sms.ui.asString
 
 @Composable
 fun ComposeScreen(
@@ -78,7 +83,8 @@ fun ComposeScreen(
     val context = LocalContext.current
 
     // Une seule fois, sur le contenu lui-même : recomposer ne doit pas
-    // rejoindre la photo une deuxième fois.
+    // proposer la photo une deuxième fois. Rien n'est lu ici : les fichiers
+    // attendent « Joindre » ou « Envoyer ».
     LaunchedEffect(shared) {
         shared?.let { vm.adopt(context, it) }
     }
@@ -93,10 +99,10 @@ fun ComposeScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text("Nouveau message", fontWeight = FontWeight.SemiBold) },
+                title = { Text(stringResource(R.string.common_new_message), fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 actions = {
@@ -126,7 +132,8 @@ fun ComposeScreen(
         ) {
             if (vm.lines.size > 1) {
                 LineSelector(
-                    lineLabel = vm.lines.firstOrNull { it.id == vm.selectedLineId }?.label ?: "Ligne",
+                    lineLabel = vm.lines.firstOrNull { it.id == vm.selectedLineId }?.label
+                        ?: stringResource(R.string.sms_compose_line),
                     lines = vm.lines,
                     onSelect = vm::selectLine,
                 )
@@ -136,8 +143,8 @@ fun ComposeScreen(
             OutlinedTextField(
                 value = vm.recipient,
                 onValueChange = vm::onRecipientChange,
-                label = { Text("À :") },
-                placeholder = { Text("Nom ou numéro") },
+                label = { Text(stringResource(R.string.sms_compose_to)) },
+                placeholder = { Text(stringResource(R.string.sms_compose_recipient_hint)) },
                 singleLine = true,
                 supportingText = { vm.recipientName?.let { Text(it) } },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
@@ -163,7 +170,7 @@ fun ComposeScreen(
             OutlinedTextField(
                 value = vm.message,
                 onValueChange = vm::onMessageChange,
-                label = { Text("Message") },
+                label = { Text(stringResource(R.string.sms_compose_message_label)) },
                 minLines = 3,
                 modifier = Modifier.fillMaxWidth(),
                 trailingIcon = {
@@ -182,13 +189,16 @@ fun ComposeScreen(
                     onClick = { picker.launch(arrayOf("*/*")) },
                     enabled = vm.lineDoesMms && vm.canAttachMore,
                 ) {
-                    Icon(Icons.Filled.AttachFile, contentDescription = "Joindre un fichier")
+                    Icon(Icons.Filled.AttachFile, contentDescription = stringResource(R.string.common_attach_file))
                 }
                 Text(
                     when {
-                        !vm.lineDoesMms -> "Cette ligne n'envoie pas de MMS."
-                        vm.attachments.isEmpty() ->
-                            "Jusqu'à ${MediaPrep.MAX_PARTS} pièces jointes (MMS)."
+                        !vm.lineDoesMms -> stringResource(R.string.sms_compose_line_no_mms)
+                        vm.attachments.isEmpty() -> pluralStringResource(
+                            R.plurals.sms_compose_attachments_up_to,
+                            MediaPrep.MAX_PARTS,
+                            MediaPrep.MAX_PARTS,
+                        )
                         else -> "MMS · ${vm.attachments.size}/${MediaPrep.MAX_PARTS}"
                     },
                     fontSize = 12.sp,
@@ -203,10 +213,16 @@ fun ComposeScreen(
                     onRemove = vm::removeAttachment,
                 )
             }
+            PiecesProposees(
+                proposees = vm.proposees,
+                onJoindre = { vm.joindreProposee(context, it) },
+                onEcarter = vm::ecarterProposee,
+                modifier = Modifier.padding(top = 4.dp),
+            )
 
             Spacer(Modifier.height(20.dp))
             Button(
-                onClick = { vm.send(onSent) },
+                onClick = { vm.send(context, onSent) },
                 enabled = !vm.sending && vm.preparing == 0,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -219,13 +235,13 @@ fun ComposeScreen(
                         modifier = Modifier.size(22.dp),
                     )
                 } else {
-                    Text("Envoyer", fontSize = 16.sp)
+                    Text(stringResource(R.string.common_send), fontSize = 16.sp)
                 }
             }
 
             vm.error?.let {
                 Spacer(Modifier.height(12.dp))
-                Text(it, color = MaterialTheme.colorScheme.error)
+                Text(it.asString(), color = MaterialTheme.colorScheme.error)
             }
         }
     }
@@ -239,7 +255,11 @@ private fun LineSelector(
 ) {
     var open by remember { mutableStateOf(false) }
     Column {
-        Text("De :", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            stringResource(R.string.sms_compose_from),
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Spacer(Modifier.height(4.dp))
         Box {
             OutlinedButton(onClick = { open = true }) {
@@ -316,7 +336,9 @@ private fun MediaChips(
                     Text("${media.filename} · ${humanSize(media.sizeBytes)}", fontSize = 12.sp)
                 },
                 leadingIcon = { Icon(Icons.Filled.AttachFile, null, Modifier.size(16.dp)) },
-                trailingIcon = { Icon(Icons.Filled.Close, "Retirer", Modifier.size(16.dp)) },
+                trailingIcon = {
+                    Icon(Icons.Filled.Close, stringResource(R.string.common_remove), Modifier.size(16.dp))
+                },
                 modifier = Modifier.padding(end = 8.dp),
             )
         }
@@ -324,7 +346,7 @@ private fun MediaChips(
             AssistChip(
                 onClick = {},
                 enabled = false,
-                label = { Text("Préparation…", fontSize = 12.sp) },
+                label = { Text(stringResource(R.string.sms_compose_preparing), fontSize = 12.sp) },
                 leadingIcon = {
                     CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
                 },
@@ -334,8 +356,10 @@ private fun MediaChips(
     }
 }
 
+/** L'unité suit la langue (Mo, MB) et la décimale aussi (1,5 ou 1.5). */
+@Composable
 private fun humanSize(bytes: Int): String = when {
-    bytes >= 1_048_576 -> "%.1f Mo".format(bytes / 1_048_576.0)
-    bytes >= 1024 -> "%d ko".format(bytes / 1024)
-    else -> "$bytes o"
+    bytes >= 1_048_576 -> stringResource(R.string.size_megabytes, bytes / 1_048_576.0)
+    bytes >= 1024 -> stringResource(R.string.size_kilobytes, bytes / 1024)
+    else -> stringResource(R.string.size_bytes, bytes)
 }

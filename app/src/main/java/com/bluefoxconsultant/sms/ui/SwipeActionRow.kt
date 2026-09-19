@@ -34,6 +34,8 @@ import androidx.compose.ui.unit.dp
 import com.bluefoxconsultant.sms.data.SwipeAction
 import com.bluefoxconsultant.sms.ui.theme.BrandAccent
 import kotlin.math.abs
+import androidx.compose.ui.res.stringResource
+import com.bluefoxconsultant.sms.R
 
 /**
  * Fraction de la largeur de la ligne à parcourir pour que l'action parte.
@@ -164,7 +166,7 @@ fun SwipeActionRow(
                 ) {
                     Icon(
                         icon,
-                        contentDescription = label,
+                        contentDescription = stringResource(label),
                         tint = if (armed) Color.White
                         else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.scale(iconScale),
@@ -186,12 +188,12 @@ fun SwipeActionRow(
  * montrait quand même la boîte d'archives, ce qui décrit la mauvaise action au
  * moment précis où la personne décide de relâcher ou non.
  */
-private fun swipeGlyph(action: SwipeAction, restore: Boolean): Pair<ImageVector, String> =
+private fun swipeGlyph(action: SwipeAction, restore: Boolean): Pair<ImageVector, Int> =
     when (action) {
         SwipeAction.ARCHIVE ->
-            if (restore) Icons.Filled.Inbox to "Remettre"
-            else Icons.Filled.Archive to "Archiver"
-        SwipeAction.SNOOZE -> Icons.Filled.Schedule to "Reporter"
-        SwipeAction.MARK_READ -> Icons.Filled.Drafts to "Marquer lu"
-        SwipeAction.NONE -> Icons.Filled.Archive to "Archiver"
+            if (restore) Icons.Filled.Inbox to R.string.swipe_restore
+            else Icons.Filled.Archive to R.string.common_archive
+        SwipeAction.SNOOZE -> Icons.Filled.Schedule to R.string.common_snooze
+        SwipeAction.MARK_READ -> Icons.Filled.Drafts to R.string.common_mark_read
+        SwipeAction.NONE -> Icons.Filled.Archive to R.string.common_archive
     }
